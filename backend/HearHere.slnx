@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HearHere.Api/HearHere.Api.csproj" />
+    <Project Path="src/HearHere.Functions/HearHere.Functions.csproj" />
+    <Project Path="src/HearHere.Shared/HearHere.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HearHere.Api.Tests/HearHere.Api.Tests.csproj" />
+    <Project Path="tests/HearHere.Functions.Tests/HearHere.Functions.Tests.csproj" />
+  </Folder>
+</Solution>
