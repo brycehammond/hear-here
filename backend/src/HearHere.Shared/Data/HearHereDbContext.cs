@@ -68,6 +68,10 @@ public class HearHereDbContext : DbContext
                 .HasColumnName("avatar_blob_key")
                 .HasColumnType("text");
 
+            entity.Property(e => e.ApnsToken)
+                .HasColumnName("apns_token")
+                .HasColumnType("text");
+
             entity.Property(e => e.Role)
                 .HasColumnName("role")
                 .HasColumnType("varchar(20)")

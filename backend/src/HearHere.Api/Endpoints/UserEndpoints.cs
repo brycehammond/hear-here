@@ -48,6 +48,9 @@ public static class UserEndpoints
         if (request.DisplayName is not null)
             user.DisplayName = request.DisplayName;
 
+        if (request.ApnsToken is not null)
+            user.ApnsToken = request.ApnsToken;
+
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 

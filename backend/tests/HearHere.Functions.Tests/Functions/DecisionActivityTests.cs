@@ -1,11 +1,13 @@
 using System.Text.Json;
 using FluentAssertions;
 using HearHere.Functions.Functions;
+using HearHere.Shared.Configuration;
 using HearHere.Shared.Data;
 using HearHere.Shared.Data.Entities;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
@@ -24,7 +26,7 @@ public class DecisionActivityTests
             .Options;
         _db = new HearHereDbContext(options);
 
-        _sut = new DecisionActivity(_db);
+        _sut = new DecisionActivity(_db, Options.Create(new ModerationSettings()));
 
         _functionContext = Substitute.For<FunctionContext>();
         var serviceProvider = Substitute.For<IServiceProvider>();
@@ -357,5 +359,56 @@ public class DecisionActivityTests
 
         var moderationRecord = await _db.ModerationRecords.FirstAsync(m => m.RecordingId == recordingId);
         moderationRecord.Action.Should().Be("manual_reject");
+    }
+
+    [Fact]
+    public async Task CustomThresholds_OverrideDefaults()
+    {
+        var customSettings = new ModerationSettings
+        {
+            Thresholds = new Dictionary<string, CategoryThreshold>
+            {
+                ["hate"] = new(0.1, 0.3) // Much stricter
+            },
+            DefaultThreshold = new(0.3, 0.7)
+        };
+        var customSut = new DecisionActivity(_db, Options.Create(customSettings));
+
+        // Score of 0.4 would pass default (0.3, 0.7) but should reject with custom (0.1, 0.3)
+        var scores = new Dictionary<string, double>
+        {
+            ["hate"] = 0.4
+        };
+
+        var input = new EvaluateDecisionInput(
+            Guid.NewGuid(),
+            JsonSerializer.Serialize(scores));
+
+        var result = await customSut.EvaluateDecision(input, _functionContext);
+
+        result.Should().Be("AUTO_REJECT");
+    }
+
+    [Fact]
+    public async Task CustomDefaultThreshold_UsedForUnknownCategories()
+    {
+        var customSettings = new ModerationSettings
+        {
+            DefaultThreshold = new(0.1, 0.4) // Stricter default
+        };
+        var customSut = new DecisionActivity(_db, Options.Create(customSettings));
+
+        var scores = new Dictionary<string, double>
+        {
+            ["unknown_new_category"] = 0.5
+        };
+
+        var input = new EvaluateDecisionInput(
+            Guid.NewGuid(),
+            JsonSerializer.Serialize(scores));
+
+        var result = await customSut.EvaluateDecision(input, _functionContext);
+
+        result.Should().Be("AUTO_REJECT");
     }
 }

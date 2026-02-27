@@ -9,6 +9,7 @@ public class User
     public string DisplayName { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? AvatarBlobKey { get; set; }
+    public string? ApnsToken { get; set; }
     public string Role { get; set; } = "user";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

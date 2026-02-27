@@ -9,4 +9,5 @@ public interface IBlobStorageService
     Task<bool> BlobExistsAsync(string blobName);
     Task DeleteBlobAsync(string blobName);
     Task<BlobProperties?> GetBlobPropertiesAsync(string blobName);
+    Task<byte[]> DownloadBlobRangeAsync(string blobName, long offset, int count);
 }

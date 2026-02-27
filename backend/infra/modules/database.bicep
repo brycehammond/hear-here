@@ -56,7 +56,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' =
       geoRedundantBackup: environment == 'prod' ? 'Enabled' : 'Disabled'
     }
     highAvailability: {
-      mode: 'Disabled'
+      mode: environment == 'prod' ? 'ZoneRedundant' : 'Disabled'
     }
     authConfig: {
       activeDirectoryAuth: 'Enabled'

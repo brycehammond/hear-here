@@ -1,35 +1,23 @@
 using System.Text.Json;
+using HearHere.Shared.Configuration;
 using HearHere.Shared.Data;
 using HearHere.Shared.Data.Entities;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace HearHere.Functions.Functions;
 
 public class DecisionActivity
 {
     private readonly HearHereDbContext _db;
+    private readonly ModerationSettings _settings;
 
-    // Thresholds per category: (autoApproveBelow, autoRejectAbove)
-    private static readonly Dictionary<string, (double ApproveBelow, double RejectAbove)> Thresholds = new()
-    {
-        ["hate"] = (0.3, 0.7),
-        ["hate/threatening"] = (0.2, 0.5),
-        ["harassment"] = (0.3, 0.7),
-        ["harassment/threatening"] = (0.3, 0.7),
-        ["self-harm"] = (0.2, 0.5),
-        ["self-harm/intent"] = (0.2, 0.5),
-        ["self-harm/instructions"] = (0.2, 0.5),
-        ["sexual"] = (0.3, 0.7),
-        ["sexual/minors"] = (0.2, 0.5),
-        ["violence"] = (0.3, 0.7),
-        ["violence/graphic"] = (0.3, 0.7),
-    };
-
-    public DecisionActivity(HearHereDbContext db)
+    public DecisionActivity(HearHereDbContext db, IOptions<ModerationSettings> settings)
     {
         _db = db;
+        _settings = settings.Value;
     }
 
     [Function(nameof(EvaluateDecision))]
@@ -48,10 +36,9 @@ public class DecisionActivity
 
         foreach (var (category, score) in scores)
         {
-            if (!Thresholds.TryGetValue(category, out var threshold))
+            if (!_settings.Thresholds.TryGetValue(category, out var threshold))
             {
-                // Unknown category: use default thresholds
-                threshold = (0.3, 0.7);
+                threshold = _settings.DefaultThreshold;
             }
 
             if (score > threshold.RejectAbove)

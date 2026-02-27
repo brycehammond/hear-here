@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Azure.Identity;
 using FluentValidation;
 using HearHere.Api.Endpoints;
 using HearHere.Api.Middleware;
@@ -6,8 +7,17 @@ using HearHere.Shared.Data;
 using HearHere.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
-
 var builder = WebApplication.CreateBuilder(args);
+
+// -- Key Vault Configuration (non-Development only) --
+if (!builder.Environment.IsDevelopment())
+{
+    var keyVaultUri = builder.Configuration["KeyVault:Uri"];
+    if (!string.IsNullOrEmpty(keyVaultUri))
+    {
+        builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), new DefaultAzureCredential());
+    }
+}
 
 // -- Authentication: Microsoft Entra External ID (Azure AD B2C) --
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAdB2C");
@@ -17,10 +27,30 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AdminOnly", policy => policy.RequireClaim("extension_Role", "admin"));
 
 // -- Database --
-builder.Services.AddDbContext<HearHereDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddDbContext<HearHereDbContext>(options =>
+        options.UseNpgsql(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+}
+else
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured.");
+    var dataSourceBuilder = new Npgsql.NpgsqlDataSourceBuilder(connectionString);
+    Npgsql.NpgsqlNetTopologySuiteExtensions.UseNetTopologySuite(dataSourceBuilder);
+    dataSourceBuilder.UsePeriodicPasswordProvider(async (_, ct) =>
+    {
+        var credential = new DefaultAzureCredential();
+        var token = await credential.GetTokenAsync(
+            new Azure.Core.TokenRequestContext(["https://ossrdbms-aad.database.windows.net/.default"]), ct);
+        return token.Token;
+    }, TimeSpan.FromMinutes(55), TimeSpan.FromSeconds(0));
+    var dataSource = dataSourceBuilder.Build();
+    builder.Services.AddDbContext<HearHereDbContext>(options =>
+        options.UseNpgsql(dataSource, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+}
 
 // -- FluentValidation --
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();

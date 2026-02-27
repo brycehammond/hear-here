@@ -105,4 +105,20 @@ public class BlobStorageService : IBlobStorageService
         var response = await blobClient.GetPropertiesAsync();
         return response.Value;
     }
+
+    public async Task<byte[]> DownloadBlobRangeAsync(string blobName, long offset, int count)
+    {
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+        var blobClient = containerClient.GetBlobClient(blobName);
+
+        var options = new BlobDownloadOptions
+        {
+            Range = new Azure.HttpRange(offset, count)
+        };
+
+        var response = await blobClient.DownloadStreamingAsync(options);
+        using var memoryStream = new MemoryStream();
+        await response.Value.Content.CopyToAsync(memoryStream);
+        return memoryStream.ToArray();
+    }
 }
