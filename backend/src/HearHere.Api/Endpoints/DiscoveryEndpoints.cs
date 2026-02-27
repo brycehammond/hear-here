@@ -12,9 +12,14 @@ public static class DiscoveryEndpoints
 {
     public static RouteGroupBuilder MapDiscoveryEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/v1/recordings").RequireAuthorization();
+        var group = routes.MapGroup("/v1/recordings")
+            .RequireAuthorization()
+            .WithTags("Discovery");
 
-        group.MapGet("/nearby", Nearby);
+        group.MapGet("/nearby", Nearby)
+            .WithName("GetNearbyRecordings")
+            .WithSummary("Discover recordings near a location")
+            .Produces<PaginatedResponse<NearbyRecordingResponse>>();
 
         return group;
     }

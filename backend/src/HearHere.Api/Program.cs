@@ -5,8 +5,11 @@ using HearHere.Api.Endpoints;
 using HearHere.Api.Middleware;
 using HearHere.Shared.Data;
 using HearHere.Shared.Services;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
+using Microsoft.OpenApi;
+using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // -- Key Vault Configuration (non-Development only) --
@@ -67,6 +70,31 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
 });
 
+// -- OpenAPI --
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info = new OpenApiInfo
+        {
+            Title = "HearHere API",
+            Version = "v1"
+        };
+
+        var components = document.Components ??= new OpenApiComponents();
+        components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Enter your JWT token"
+        };
+
+        return Task.CompletedTask;
+    });
+});
+
 // -- CORS --
 builder.Services.AddCors(options =>
 {
@@ -94,6 +122,13 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// -- OpenAPI + Scalar UI (Development only) --
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
 // -- Map endpoints --
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
@@ -103,7 +138,8 @@ app.MapReportEndpoints();
 app.MapAdminEndpoints();
 
 // -- Health check --
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+    .ExcludeFromDescription();
 
 app.Run();
 
