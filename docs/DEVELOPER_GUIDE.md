@@ -6,11 +6,11 @@
 |------|---------|---------|
 | Xcode | 16+ | iOS app development |
 | Swift | 6 | iOS app language |
-| Node.js | 20 | Backend Lambda functions and CDK |
+| Node.js | 20 | Backend Azure Functions and tooling |
 | npm | 10+ | Package management |
 | Docker | Latest | Local PostgreSQL + PostGIS |
-| AWS CLI | 2.x | AWS resource management |
-| AWS CDK CLI | 2.x | Infrastructure deployment |
+| Azure CLI | 2.x | Azure resource management |
+| Azure Functions Core Tools | 4.x | Local Functions development and deployment |
 | Firebase CLI | Latest | Firebase project management |
 
 ## Repository Structure
@@ -25,6 +25,7 @@ hear-here/
 │   ├── CLOUD_ARCHITECTURE.md      # Cloud infrastructure
 │   ├── PROJECT_OVERVIEW.md        # Product overview and roadmap
 │   ├── API_DOCUMENTATION.md       # API reference
+│   ├── QA_STRATEGY.md             # Testing strategy and test plan
 │   ├── DEVELOPER_GUIDE.md         # This document
 │   └── GLOSSARY.md                # Key terms
 ├── ios/                           # iOS app (Xcode project)
@@ -34,20 +35,20 @@ hear-here/
 │       ├── Core/                  # Network, Location, Audio, Auth services
 │       ├── Shared/                # Reusable components, extensions, styles
 │       └── Resources/             # Assets, strings, Info.plist
-├── backend/                       # Lambda functions (TypeScript)
+├── backend/                       # Azure Functions (TypeScript)
 │   ├── functions/                 # API endpoint handlers
-│   │   ├── authorizer/            # Firebase JWT validation
 │   │   ├── recordings/            # Recording CRUD
 │   │   ├── discovery/             # Nearby recordings query
 │   │   ├── users/                 # User profile management
 │   │   ├── reports/               # Content reporting
-│   │   └── admin/                 # Moderation queue management
-│   ├── moderation/                # Step Functions workflow + Lambdas
+│   │   ├── admin/                 # Moderation queue management
+│   │   └── triggers/              # Event Grid and timer triggers
+│   ├── moderation/                # Durable Functions orchestrator + activities
 │   └── shared/                    # Database client, error handling, schemas
-├── infra/                         # AWS CDK infrastructure
-│   ├── lib/                       # Stack definitions
-│   ├── bin/                       # CDK app entry point
-│   └── config/                    # Per-environment configuration
+├── infra/                         # Bicep infrastructure templates
+│   ├── main.bicep                 # Top-level orchestration
+│   ├── modules/                   # Per-concern Bicep modules
+│   └── environments/              # Per-environment parameter files
 ├── admin/                         # Human review admin UI (React)
 └── scripts/                       # Dev scripts, DB migrations
 ```
@@ -90,8 +91,8 @@ The `.env` file should contain:
 DATABASE_URL=postgresql://postgres:localdev@localhost:5432/hearhere
 FIREBASE_PROJECT_ID=hearhere-dev
 OPENAI_API_KEY=sk-...
-AUDIO_BUCKET=hearhere-audio-dev
-CLOUDFRONT_DOMAIN=cdn-dev.hearhere.app
+STORAGE_ACCOUNT_NAME=hearherestore-dev
+FRONT_DOOR_HOSTNAME=cdn-dev.hearhere.app
 ```
 
 ### 3. iOS App Setup
@@ -125,13 +126,15 @@ Firebase configuration is loaded from `GoogleService-Info.plist` (per-environmen
 
 ```bash
 cd infra
-npm install
 
-# Verify CDK compiles
-npx cdk synth -c env=dev
+# Validate Bicep templates compile
+az bicep build --file main.bicep
 
-# Show what would be deployed
-npx cdk diff -c env=dev
+# Preview what would be deployed
+az deployment group what-if \
+  --resource-group hearhere-dev-rg \
+  --template-file main.bicep \
+  --parameters environments/dev.bicepparam
 ```
 
 ### 5. Admin UI Setup
@@ -156,18 +159,18 @@ The admin UI runs at `http://localhost:5173` and requires a Firebase user with t
 | staging | Pre-production validation | On merge to `main` |
 | production | Live users | Manual with approval |
 
-Each environment runs in a separate AWS account for isolation. See [CLOUD_ARCHITECTURE.md](./CLOUD_ARCHITECTURE.md) for details.
+Each environment uses a separate Azure resource group for isolation. See [CLOUD_ARCHITECTURE.md](./CLOUD_ARCHITECTURE.md) for details.
 
 ### Secrets Management
 
-Secrets are stored in AWS Secrets Manager and never committed to the repository:
+Secrets are stored in Azure Key Vault and never committed to the repository:
 
 | Secret | Description |
 |--------|-------------|
-| `DATABASE_URL` | RDS Proxy connection string |
+| `DATABASE_URL` | PostgreSQL Flexible Server connection string |
 | `OPENAI_API_KEY` | OpenAI API key for content moderation |
-| `CLOUDFRONT_KEY_PAIR_ID` | CloudFront signing key pair ID |
-| `CLOUDFRONT_PRIVATE_KEY` | CloudFront signing private key |
+| `SPEECH_SERVICE_KEY` | Azure AI Speech service key |
+| `NOTIFICATION_HUB_CONNECTION` | Azure Notification Hubs connection string |
 
 For local development, use a `.env` file (git-ignored).
 
@@ -182,7 +185,7 @@ For local development, use a `.env` file (git-ignored).
 - **Prettier** for formatting (configured in `.prettierrc`).
 - **Naming:** `camelCase` for variables and functions, `PascalCase` for types and interfaces, `SCREAMING_SNAKE_CASE` for error codes and constants.
 - **Zod schemas** for all request validation. Infer TypeScript types from Zod schemas, not the other way around.
-- **No classes** for Lambda handlers. Export plain `handler` functions.
+- **No classes** for function handlers. Export plain `handler` functions.
 - **Kysely** for database queries. Use raw SQL only for PostGIS-specific functions.
 
 ### Swift (iOS)
@@ -196,12 +199,12 @@ For local development, use a `.env` file (git-ignored).
 - **No Combine.** Use `async`/`await` with structured concurrency.
 - **Protocols** for all services to enable mock injection in tests.
 
-### Infrastructure (CDK)
+### Infrastructure (Bicep)
 
-- **TypeScript** for all CDK code.
-- **One stack per concern** (network, storage, database, API, etc.).
-- **Resource naming:** `hearhere-{component}-{env}` (e.g., `hearhere-audio-prod`).
-- **Environment config** in `infra/config/{env}.ts` files.
+- **Bicep** for all infrastructure-as-code.
+- **One module per concern** (network, storage, database, API, etc.).
+- **Resource naming:** `hearhere-{component}-{env}` (e.g., `hearhere-api-prod`).
+- **Environment config** in `infra/environments/{env}.bicepparam` files.
 
 ---
 
@@ -235,8 +238,8 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `infra`.
 Examples:
 ```
 feat: add cursor-based pagination to nearby endpoint
-fix: handle expired pre-signed URLs in upload retry
-infra: add CloudWatch alarm for moderation queue backlog
+fix: handle expired SAS URLs in upload retry
+infra: add Azure Monitor alert for moderation queue backlog
 ```
 
 ---
@@ -271,7 +274,7 @@ All PRs must pass:
 | Type check | Backend | TypeScript compiler |
 | Unit tests | Backend | Vitest |
 | Security scan | Backend | npm audit |
-| CDK synth | Infrastructure | AWS CDK |
+| Bicep lint | Infrastructure | az bicep lint |
 | Build | iOS | xcodebuild |
 | Unit tests | iOS | XCTest |
 
@@ -305,7 +308,7 @@ npm run migrate:create -- <migration-name>
 
 ### Production Deployment
 
-Migrations run automatically as a pre-deployment step in the CI/CD pipeline. They execute as a one-off Lambda invocation using the `migration_user` database role (which has DDL permissions).
+Migrations run automatically as a pre-deployment step in the CI/CD pipeline. They execute as a one-off Azure Function invocation using the `migration_user` database role (which has DDL permissions).
 
 ---
 
@@ -316,14 +319,17 @@ Migrations run automatically as a pre-deployment step in the CI/CD pipeline. The
 ```bash
 cd infra
 
-# Deploy all stacks to an environment
-npx cdk deploy --all -c env=staging
-
-# Deploy a specific stack
-npx cdk deploy hearhere-api-staging -c env=staging
+# Deploy all resources to an environment
+az deployment group create \
+  --resource-group hearhere-staging-rg \
+  --template-file main.bicep \
+  --parameters environments/staging.bicepparam
 
 # Preview changes
-npx cdk diff -c env=staging
+az deployment group what-if \
+  --resource-group hearhere-staging-rg \
+  --template-file main.bicep \
+  --parameters environments/staging.bicepparam
 ```
 
 ### Deployment Pipeline
@@ -337,14 +343,14 @@ npx cdk diff -c env=staging
 
 ### Production Deployment Checklist
 
-1. Verify staging deployment is stable (no new alarms).
+1. Verify staging deployment is stable (no new alerts).
 2. Run the manual deploy workflow for production.
-3. Monitor CloudWatch dashboard for error spikes.
+3. Monitor Azure Dashboard for error spikes.
 4. Verify the health check endpoint returns 200.
 
-### AWS Authentication
+### Azure Authentication
 
-CI/CD authenticates to AWS via OIDC federation (no static credentials). The GitHub Actions workflow assumes an IAM role scoped to the specific environment.
+CI/CD authenticates to Azure via OIDC federation (no static credentials). The GitHub Actions workflow uses a federated credential on an Azure AD app registration, scoped to the specific environment's resource group.
 
 ---
 
@@ -365,7 +371,7 @@ npm run test:watch
 npm run test:integration
 ```
 
-**Unit tests** (Vitest) cover Lambda handlers, service logic, and Zod schema validation with mocked database and external service calls.
+**Unit tests** (Vitest) cover Azure Function handlers, service logic, and Zod schema validation with mocked database and external service calls.
 
 **Integration tests** run against a local PostgreSQL+PostGIS database (Docker) and test actual database queries including spatial operations.
 
@@ -379,29 +385,29 @@ npm run test:integration
 
 ```bash
 cd infra
-npx cdk synth -c env=dev  # Validates templates compile
+az bicep build --file main.bicep  # Validates templates compile
 ```
 
 ---
 
 ## Monitoring
 
-### CloudWatch Dashboard
+### Azure Dashboard
 
-Each environment has a CloudWatch dashboard showing:
+Each environment has an Azure Dashboard showing:
 - API request rate and error rate
-- Lambda invocation count and p99 latency
-- RDS CPU, connections, and query latency
-- Moderation pipeline throughput and queue depth
-- S3 upload volume
+- Azure Functions execution count and p99 latency
+- PostgreSQL Flexible Server CPU, connections, and query latency
+- Moderation pipeline throughput and Service Bus queue depth
+- Blob Storage upload volume
 
-### Key Alarms (Production)
+### Key Alerts (Production)
 
-| Alarm | Threshold |
+| Alert | Threshold |
 |-------|-----------|
 | API 5xx error rate | > 5% for 5 min |
-| Lambda errors | > 10 in 5 min |
-| RDS CPU | > 80% for 10 min |
+| Function failures | > 10 in 5 min |
+| PostgreSQL CPU | > 80% for 10 min |
 | Moderation queue backlog | > 100 items for 30 min |
 | Moderation queue age | Oldest message > 24 hours |
 
@@ -413,7 +419,7 @@ See [CLOUD_ARCHITECTURE.md](./CLOUD_ARCHITECTURE.md) for the full monitoring and
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) -- System architecture
 - [DATABASE.md](./DATABASE.md) -- Database schema and queries
-- [BACKEND.md](./BACKEND.md) -- Backend API design and Lambda structure
+- [BACKEND.md](./BACKEND.md) -- Backend API design and Azure Functions structure
 - [IOS_APP.md](./IOS_APP.md) -- iOS app architecture and UI
 - [CLOUD_ARCHITECTURE.md](./CLOUD_ARCHITECTURE.md) -- Cloud infrastructure and CI/CD
 - [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) -- API reference
