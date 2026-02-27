@@ -13,9 +13,14 @@ public static class AuthEndpoints
 {
     public static RouteGroupBuilder MapAuthEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/v1/auth").RequireAuthorization();
+        var group = routes.MapGroup("/v1/auth")
+            .RequireAuthorization()
+            .WithTags("Auth");
 
-        group.MapPost("/register", Register);
+        group.MapPost("/register", Register)
+            .WithName("Register")
+            .WithSummary("Register a new user account")
+            .Produces<UserResponse>(StatusCodes.Status201Created);
 
         return group;
     }

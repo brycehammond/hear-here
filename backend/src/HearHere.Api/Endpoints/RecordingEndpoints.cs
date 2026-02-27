@@ -19,14 +19,39 @@ public static class RecordingEndpoints
 
     public static RouteGroupBuilder MapRecordingEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/v1/recordings").RequireAuthorization();
+        var group = routes.MapGroup("/v1/recordings")
+            .RequireAuthorization()
+            .WithTags("Recordings");
 
-        group.MapPost("/", Create);
-        group.MapGet("/mine", Mine);
-        group.MapGet("/{id:guid}", GetById);
-        group.MapDelete("/{id:guid}", Delete);
-        group.MapPost("/{id:guid}/upload-complete", UploadComplete);
-        group.MapGet("/{id:guid}/playback", Playback);
+        group.MapPost("/", Create)
+            .WithName("CreateRecording")
+            .WithSummary("Create a new recording")
+            .Produces<RecordingCreateResponse>(StatusCodes.Status201Created);
+
+        group.MapGet("/mine", Mine)
+            .WithName("GetMyRecordings")
+            .WithSummary("List current user's recordings")
+            .Produces<PaginatedResponse<RecordingResponse>>();
+
+        group.MapGet("/{id:guid}", GetById)
+            .WithName("GetRecording")
+            .WithSummary("Get a recording by ID")
+            .Produces<RecordingResponse>();
+
+        group.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteRecording")
+            .WithSummary("Delete a recording")
+            .Produces(StatusCodes.Status204NoContent);
+
+        group.MapPost("/{id:guid}/upload-complete", UploadComplete)
+            .WithName("UploadComplete")
+            .WithSummary("Mark recording upload as complete")
+            .Produces<UploadCompleteResponse>();
+
+        group.MapGet("/{id:guid}/playback", Playback)
+            .WithName("GetPlayback")
+            .WithSummary("Get playback URL for a recording")
+            .Produces<PlaybackResponse>();
 
         return group;
     }
@@ -234,7 +259,7 @@ public static class RecordingEndpoints
         // Send message to Service Bus to start moderation pipeline
         await messageQueue.SendModerationRequestAsync(recording.Id);
 
-        return Results.Ok(new { id = recording.Id, status = recording.Status });
+        return Results.Ok(new UploadCompleteResponse { Id = recording.Id, Status = recording.Status });
     }
 
     private static async Task<IResult> Playback(

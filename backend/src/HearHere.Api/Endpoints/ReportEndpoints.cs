@@ -15,9 +15,14 @@ public static class ReportEndpoints
 
     public static RouteGroupBuilder MapReportEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/v1/reports").RequireAuthorization();
+        var group = routes.MapGroup("/v1/reports")
+            .RequireAuthorization()
+            .WithTags("Reports");
 
-        group.MapPost("/", CreateReport);
+        group.MapPost("/", CreateReport)
+            .WithName("CreateReport")
+            .WithSummary("Report a recording")
+            .Produces<ReportResponse>(StatusCodes.Status201Created);
 
         return group;
     }

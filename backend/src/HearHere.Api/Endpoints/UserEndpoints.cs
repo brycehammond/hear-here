@@ -11,10 +11,19 @@ public static class UserEndpoints
 {
     public static RouteGroupBuilder MapUserEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/v1/users").RequireAuthorization();
+        var group = routes.MapGroup("/v1/users")
+            .RequireAuthorization()
+            .WithTags("Users");
 
-        group.MapGet("/me", GetMe);
-        group.MapPut("/me", UpdateMe);
+        group.MapGet("/me", GetMe)
+            .WithName("GetMe")
+            .WithSummary("Get current user profile")
+            .Produces<UserResponse>();
+
+        group.MapPut("/me", UpdateMe)
+            .WithName("UpdateMe")
+            .WithSummary("Update current user profile")
+            .Produces<UserResponse>();
 
         return group;
     }

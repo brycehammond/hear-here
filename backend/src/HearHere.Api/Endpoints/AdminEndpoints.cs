@@ -17,11 +17,23 @@ public static class AdminEndpoints
     public static RouteGroupBuilder MapAdminEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/v1/admin/moderation")
-            .RequireAuthorization("AdminOnly");
+            .RequireAuthorization("AdminOnly")
+            .WithTags("Admin");
 
-        group.MapGet("/queue", GetQueue);
-        group.MapPost("/{recordingId:guid}/decision", PostDecision);
-        group.MapGet("/stats", GetStats);
+        group.MapGet("/queue", GetQueue)
+            .WithName("GetModerationQueue")
+            .WithSummary("Get the moderation review queue")
+            .Produces<PaginatedResponse<ModerationQueueItemResponse>>();
+
+        group.MapPost("/{recordingId:guid}/decision", PostDecision)
+            .WithName("PostModerationDecision")
+            .WithSummary("Submit a moderation decision for a recording")
+            .Produces<ModerationDecisionResponse>();
+
+        group.MapGet("/stats", GetStats)
+            .WithName("GetModerationStats")
+            .WithSummary("Get moderation statistics")
+            .Produces<ModerationStatsResponse>();
 
         return group;
     }
@@ -149,12 +161,12 @@ public static class AdminEndpoints
         db.ModerationRecords.Add(moderationRecord);
         await db.SaveChangesAsync();
 
-        return Results.Ok(new
+        return Results.Ok(new ModerationDecisionResponse
         {
-            id = recording.Id,
-            status = recording.Status,
-            reviewed_by = user.Id.ToString(),
-            reviewed_at = moderationRecord.CreatedAt
+            Id = recording.Id,
+            Status = recording.Status,
+            ReviewedBy = user.Id.ToString(),
+            ReviewedAt = moderationRecord.CreatedAt
         });
     }
 
