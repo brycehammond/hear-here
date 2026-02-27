@@ -1,0 +1,15 @@
+// Development Configuration
+// Hear Here - Dev Environment
+
+PRODUCT_BUNDLE_IDENTIFIER = app.hearhere.dev
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
+API_BASE_URL = https:/$()/dev-api.hearhere.app/v1
+
+B2C_TENANT_NAME = hearhere-dev
+B2C_CLIENT_ID = $(B2C_CLIENT_ID_DEV)
+B2C_POLICY_SIGNIN = B2C_1_signin
+B2C_REDIRECT_URI = msauth.app.hearhere.dev://auth
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DEV
