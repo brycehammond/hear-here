@@ -208,6 +208,7 @@ public static class RecordingEndpoints
         Guid id,
         HearHereDbContext db,
         IBlobStorageService blobStorage,
+        IMessageQueueService messageQueue,
         HttpContext httpContext)
     {
         var user = await httpContext.GetRequiredUserAsync(db);
@@ -229,6 +230,9 @@ public static class RecordingEndpoints
         recording.Status = "pending_moderation";
         recording.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
+
+        // Send message to Service Bus to start moderation pipeline
+        await messageQueue.SendModerationRequestAsync(recording.Id);
 
         return Results.Ok(new { id = recording.Id, status = recording.Status });
     }

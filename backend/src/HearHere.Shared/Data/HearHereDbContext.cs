@@ -422,11 +422,11 @@ public class HearHereDbContext : DbContext
             {
                 t.HasCheckConstraint(
                     "chk_reports_reason_code",
-                    "reason_code IN ('inappropriate', 'spam', 'harassment', 'copyright', 'misinformation', 'other')");
+                    "reason_code IN ('hate_speech', 'harassment', 'violence', 'sexual_content', 'spam', 'misinformation', 'other')");
 
                 t.HasCheckConstraint(
                     "chk_reports_status",
-                    "status IN ('open', 'reviewing', 'resolved_removed', 'resolved_dismissed')");
+                    "status IN ('submitted', 'reviewing', 'resolved_removed', 'resolved_dismissed')");
             });
 
             entity.HasKey(e => e.Id);
@@ -455,7 +455,7 @@ public class HearHereDbContext : DbContext
             entity.Property(e => e.Status)
                 .HasColumnName("status")
                 .HasColumnType("varchar(20)")
-                .HasDefaultValue("open")
+                .HasDefaultValue("submitted")
                 .IsRequired();
 
             entity.Property(e => e.ResolvedBy)

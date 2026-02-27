@@ -77,14 +77,15 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// Storage Blob Data Contributor: ba92f5b4-2d11-453d-a403-e96b0029c9fe
-var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+// Storage Blob Data Owner: b7e6dc6d-f1e8-4753-8033-0f276bb0955b
+// (superset of Contributor; required for user delegation SAS key generation)
+var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccountId, webApp.id, storageBlobDataContributorRoleId)
+resource storageBlobOwnerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccountId, webApp.id, storageBlobDataOwnerRoleId)
   scope: storageAccount
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
     principalId: webApp.identity.principalId
     principalType: 'ServicePrincipal'
   }

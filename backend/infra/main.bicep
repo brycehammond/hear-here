@@ -16,6 +16,16 @@ param postgresAdminLogin string
 @secure()
 param postgresAdminPassword string
 
+@description('Entra ID admin object ID (user or group) for PostgreSQL Entra authentication')
+param postgresEntraAdminObjectId string
+
+@description('Entra ID admin display name for PostgreSQL')
+param postgresEntraAdminName string
+
+@description('Entra ID admin type for PostgreSQL (User, Group, or ServicePrincipal)')
+@allowed(['User', 'Group', 'ServicePrincipal'])
+param postgresEntraAdminType string = 'Group'
+
 var tags = {
   project: 'hear-here'
   environment: environment
@@ -62,6 +72,9 @@ module database 'modules/database.bicep' = {
     tags: tags
     administratorLogin: postgresAdminLogin
     administratorPassword: postgresAdminPassword
+    entraAdminObjectId: postgresEntraAdminObjectId
+    entraAdminName: postgresEntraAdminName
+    entraAdminType: postgresEntraAdminType
   }
 }
 

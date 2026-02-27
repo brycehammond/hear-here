@@ -25,7 +25,7 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
 
 resource moderationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: serviceBusNamespace
-  name: 'moderation-pipeline'
+  name: 'moderation-requests'
   properties: {
     maxDeliveryCount: 5
     lockDuration: 'PT1M'

@@ -9,7 +9,7 @@ public class Report
     public Guid UserId { get; set; }
     public string ReasonCode { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public string Status { get; set; } = "open";
+    public string Status { get; set; } = "submitted";
     public Guid? ResolvedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }

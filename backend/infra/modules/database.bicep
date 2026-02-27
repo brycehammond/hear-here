@@ -18,6 +18,16 @@ param administratorLogin string
 @secure()
 param administratorPassword string
 
+@description('Entra ID admin object ID (user or group) for PostgreSQL Entra authentication')
+param entraAdminObjectId string
+
+@description('Entra ID admin display name')
+param entraAdminName string
+
+@description('Entra ID admin type (User or Group)')
+@allowed(['User', 'Group', 'ServicePrincipal'])
+param entraAdminType string = 'Group'
+
 var serverName = '${projectName}-pg-${environment}'
 var databaseName = 'hearhere'
 
@@ -80,6 +90,21 @@ resource postGISExtension 'Microsoft.DBforPostgreSQL/flexibleServers/configurati
     value: 'POSTGIS'
     source: 'user-override'
   }
+}
+
+// Entra ID administrator — allows managed identities to authenticate via AAD tokens
+resource entraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@2024-08-01' = {
+  parent: postgresServer
+  name: entraAdminObjectId
+  properties: {
+    principalName: entraAdminName
+    principalType: entraAdminType
+    tenantId: tenant().tenantId
+  }
+  dependsOn: [
+    database
+    postGISExtension
+  ]
 }
 
 @description('PostgreSQL server resource ID')

@@ -28,6 +28,9 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 // -- Blob Storage --
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
 
+// -- Service Bus --
+builder.Services.AddSingleton<IMessageQueueService, ServiceBusMessageQueueService>();
+
 // -- JSON serialization --
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
