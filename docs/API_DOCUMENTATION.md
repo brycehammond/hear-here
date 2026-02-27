@@ -23,8 +23,8 @@ Authorization: Bearer <firebase_jwt>
 1. The iOS app signs the user in via Firebase Auth SDK (Apple ID or Google).
 2. Firebase issues a JWT ID token.
 3. The app sends this JWT with every API request.
-4. A Lambda authorizer validates the JWT against Firebase's public keys, verifying the signature, issuer, audience, and expiration.
-5. The authorizer extracts the user's `uid` and passes it to the backend handler.
+4. Azure API Management validates the JWT against Firebase's public keys using a `validate-jwt` inbound policy, verifying the signature, issuer, audience, and expiration.
+5. The policy extracts the user's `uid` and passes it downstream via a custom header (`X-User-Id`).
 
 Token refresh is handled automatically by the Firebase SDK. If the backend returns `401 Unauthorized`, the client refreshes the token and retries once.
 
@@ -37,7 +37,7 @@ Admin endpoints (under `/admin/`) require a Firebase JWT with the custom claim `
 ## Request and Response Format
 
 - All request and response bodies use **JSON** (`Content-Type: application/json`).
-- Audio upload and download use **pre-signed URLs** -- audio bytes never pass through the API.
+- Audio upload and download use **SAS URLs** (Shared Access Signature) -- audio bytes never pass through the API.
 - Dates use **ISO 8601** format (`2026-02-26T12:00:00Z`).
 - Field names use **snake_case**.
 
@@ -103,7 +103,7 @@ Validation failures include field-level details:
 
 ## Rate Limiting
 
-Rate limits are enforced per user (identified by Firebase UID).
+Rate limits are enforced per user (identified by Firebase UID) via Azure API Management `rate-limit-by-key` policies.
 
 | Endpoint Category | Limit | Burst |
 |-------------------|-------|-------|
@@ -233,7 +233,7 @@ Updates the authenticated user's profile.
 
 #### POST `/v1/recordings`
 
-Creates a recording metadata entry and returns a pre-signed S3 upload URL.
+Creates a recording metadata entry and returns a SAS upload URL for Azure Blob Storage.
 
 **Request:**
 ```json
@@ -258,7 +258,7 @@ Creates a recording metadata entry and returns a pre-signed S3 upload URL.
 ```json
 {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "upload_url": "https://hearhere-audio.s3.amazonaws.com/uploads/a1b2c3d4-...?X-Amz-Algorithm=...",
+    "upload_url": "https://hearherestore.blob.core.windows.net/audio-pending/a1b2c3d4-...?sv=...&sig=...",
     "upload_expires_at": "2026-02-26T12:15:00Z",
     "status": "pending_upload"
 }
@@ -344,7 +344,7 @@ Lists all recordings by the authenticated user across all statuses.
 
 #### DELETE `/v1/recordings/{id}`
 
-Soft-deletes a recording. Only the owner can delete their own recordings. Audio is permanently removed from S3 after 30 days.
+Soft-deletes a recording. Only the owner can delete their own recordings. Audio is permanently removed from Blob Storage after 30 days.
 
 **Response:** `204 No Content`
 
@@ -399,12 +399,12 @@ Returns approved recordings near a given location, sorted by distance.
 
 #### GET `/v1/recordings/{id}/playback`
 
-Returns a time-limited signed CloudFront URL for streaming audio.
+Returns a time-limited SAS-signed URL for streaming audio via Azure Front Door.
 
 **Response (200):**
 ```json
 {
-    "playback_url": "https://cdn.hearhere.app/audio/a1b2c3d4-...?Expires=...&Signature=...&Key-Pair-Id=...",
+    "playback_url": "https://cdn.hearhere.app/audio/a1b2c3d4-...?sv=...&se=...&sr=b&sp=r&sig=...",
     "expires_at": "2026-02-26T13:00:00Z",
     "duration_sec": 45,
     "format": "aac"
@@ -532,7 +532,7 @@ Submit a moderation decision.
 }
 ```
 
-A push notification is sent to the recording's creator.
+A push notification is sent to the recording's creator via Azure Notification Hubs.
 
 #### GET `/v1/admin/moderation/stats`
 
@@ -553,11 +553,11 @@ Moderation dashboard statistics.
 
 ## Recording Upload Flow (End-to-End)
 
-1. **Create recording:** `POST /v1/recordings` with metadata. Receive `upload_url`.
-2. **Upload audio:** HTTP PUT to `upload_url` with the `.m4a` file and `Content-Type: audio/aac`. The pre-signed URL expires after 15 minutes and enforces a 10 MB size limit.
+1. **Create recording:** `POST /v1/recordings` with metadata. Receive `upload_url` (SAS URL for Blob Storage).
+2. **Upload audio:** HTTP PUT to `upload_url` with the `.m4a` file and `Content-Type: audio/aac`. The SAS URL expires after 15 minutes and enforces a 10 MB size limit.
 3. **Confirm upload:** `POST /v1/recordings/{id}/upload-complete`. Status changes to `pending_moderation`.
-4. **Moderation runs asynchronously:** Transcription, content classification, and decision logic.
-5. **User is notified:** Push notification when the recording is approved or rejected.
+4. **Moderation runs asynchronously:** Azure Durable Functions orchestrates transcription (Azure AI Speech), content classification (OpenAI Moderation API), and decision logic.
+5. **User is notified:** Push notification via Azure Notification Hubs when the recording is approved or rejected.
 6. **Recording becomes discoverable:** If approved, it appears in nearby discovery queries.
 
 ## Moderation Decision Thresholds
@@ -571,7 +571,7 @@ Moderation dashboard statistics.
 | sexual | 0.3 | 0.7 | 0.3 - 0.7 |
 | violence | 0.3 | 0.7 | 0.3 - 0.7 |
 
-Thresholds are configurable without redeployment.
+Thresholds are stored in Azure App Configuration and are configurable without redeployment.
 
 ---
 

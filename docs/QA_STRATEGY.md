@@ -23,11 +23,11 @@
 2. Implement the function.
 3. Refactor with tests green.
 4. Zod schemas validate request input; Kysely queries are tested against real PostgreSQL.
-5. Integration tests verify Lambda handler with real DB (Testcontainers) and mocked AWS services.
+5. Integration tests verify Azure Functions handlers with real DB (Testcontainers) and mocked Azure services.
 
-**Infrastructure (AWS CDK, TypeScript)**:
-1. CDK snapshot tests verify infrastructure changes are intentional.
-2. CDK assertion tests validate resource properties (e.g., S3 bucket encryption enabled, RDS Proxy configured, Lambda VPC placement).
+**Infrastructure (Bicep)**:
+1. Bicep what-if tests verify infrastructure changes are intentional.
+2. Bicep validation tests confirm templates compile and resource properties are correct (e.g., Blob Storage encryption enabled, PgBouncer configured, Azure Functions VNet integration).
 
 ---
 
@@ -54,7 +54,7 @@
 
 - iOS: Xcode code coverage reports generated per PR. Enforced via CI gate.
 - Backend: Coverage reports via Vitest's built-in `--coverage` flag (c8/istanbul). Fail CI if coverage drops below threshold.
-- Coverage is measured on business logic, not boilerplate (exclude generated code, CDK constructs, UI layout-only code).
+- Coverage is measured on business logic, not boilerplate (exclude generated code, Bicep modules, UI layout-only code).
 
 ---
 
@@ -106,8 +106,8 @@ protocol AudioRecorderProtocol {
 | `APIClient` | Request construction (headers, body, URL, base URL per environment); JWT token attachment via `AuthInterceptor`; response parsing (success and typed `APIError` cases); 401 triggers single token refresh and retry; 429 rate limit handling; snake_case to camelCase decoding |
 | `LocationService` | `.whenInUse` authorization state changes; `currentLocation` published property updates; accuracy modes (`kCLLocationAccuracyBest` for recording, `kCLLocationAccuracyHundredMeters` for discovery); start/stop updates lifecycle |
 | `AudioRecorder` | AAC codec configuration (44.1kHz, 64kbps, mono); duration tracking; max 5-minute enforcement; interruption handling (phone call, route change) |
-| `AudioPlayer` | AVPlayer streaming from CloudFront signed URLs; progressive download playback; error recovery |
-| `UploadManager` | Background `URLSession` upload task creation; pre-signed URL request; upload progress tracking via delegate; retry on network failure; upload cancellation; persistence of pending uploads across app launches |
+| `AudioPlayer` | AVPlayer streaming from Azure Front Door SAS URLs; progressive download playback; error recovery |
+| `UploadManager` | Background `URLSession` upload task creation; SAS URL request; upload progress tracking via delegate; retry on network failure; upload cancellation; persistence of pending uploads across app launches |
 | `AuthService` | Firebase Auth wrapper; `@Observable` `AuthState` updates; token retrieval for API requests |
 | `CacheManager` | LRU eviction; 100 MB cap; audio file caching for offline playback |
 | `NetworkMonitor` | `NWPathMonitor` connectivity state; offline banner trigger |
@@ -196,7 +196,7 @@ Snapshot tests verify that views render correctly and detect unintended visual r
 |------|---------|
 | **Vitest** | Unit and integration tests (TypeScript-native, fast) |
 | **Testcontainers** | Spin up PostgreSQL 16 + PostGIS 3.4 in Docker for integration tests |
-| **aws-sdk-client-mock** | Mock AWS services (S3, SQS, Step Functions, Transcribe, SNS) |
+| **Azure SDK mocks** | Mock Azure services (Blob Storage, Service Bus, Durable Functions, AI Speech, Notification Hubs) |
 | **Zod** | Request validation schemas (tested for correctness) |
 | **Kysely** | Type-safe SQL query builder (queries tested against real PostGIS) |
 | **Artillery or k6** | Load and stress testing |
@@ -204,16 +204,16 @@ Snapshot tests verify that views render correctly and detect unintended visual r
 
 ### 4.2 Unit Tests
 
-#### Lambda Handlers
+#### Azure Functions Handlers
 
 | Handler | Test Cases |
 |---------|------------|
 | `POST /v1/auth/register` | Creates user with Firebase UID and display_name; 409 if user already exists; display_name required (1-50 chars, no control characters); validates Zod schema |
-| `POST /v1/recordings` | Valid recording creation; missing required fields (subject, lat/lng, duration_sec); invalid coordinates (lat > 90, lng > 180); duration exceeds max (300s); generates pre-signed S3 PUT URL with correct constraints (15-min expiry, 10MB max, `Content-Type: audio/aac`); sets status to `pending_upload`; checks daily upload limit (10/day); returns 429 `DAILY_UPLOAD_LIMIT` when exceeded |
-| `POST /v1/recordings/{id}/upload-complete` | Verifies S3 object exists; updates status from `pending_upload` to `pending_moderation`; starts Step Functions execution; 404 if not found or not owned; 409 if not in `pending_upload` status |
+| `POST /v1/recordings` | Valid recording creation; missing required fields (subject, lat/lng, duration_sec); invalid coordinates (lat > 90, lng > 180); duration exceeds max (300s); generates Blob Storage SAS URL with correct constraints (15-min expiry, 10MB max, `Content-Type: audio/aac`); sets status to `pending_upload`; checks daily upload limit (10/day); returns 429 `DAILY_UPLOAD_LIMIT` when exceeded |
+| `POST /v1/recordings/{id}/upload-complete` | Verifies blob exists in Azure Blob Storage; updates status from `pending_upload` to `pending_moderation`; starts Durable Functions orchestration; 404 if not found or not owned; 409 if not in `pending_upload` status |
 | `GET /v1/recordings/{id}` | Returns full details for owner (any status); returns public details for non-owner (approved only); 404 `RECORDING_NOT_FOUND` for non-existent; 404 for non-owner viewing unapproved recording |
 | `GET /v1/recordings/nearby` | Valid coordinate parsing from query params; radius bounds enforcement (50-5000m); default radius (500m); default limit (20, max 50); cursor-based pagination on `(distance_m, id)`; invalid coordinates rejected (422 `INVALID_RADIUS`); minimum radius (50m) enforced |
-| `GET /v1/recordings/{id}/playback` | Returns signed CloudFront URL (1-hour expiry); includes `duration_sec` and `format`; 403 `RECORDING_NOT_PLAYABLE` for unapproved (unless owner); 404 for missing; logs play event (fire-and-forget) |
+| `GET /v1/recordings/{id}/playback` | Returns Azure Front Door SAS URL (1-hour expiry); includes `duration_sec` and `format`; 403 `RECORDING_NOT_PLAYABLE` for unapproved (unless owner); 404 for missing; logs play event (fire-and-forget) |
 | `GET /v1/recordings/mine` | Returns only current user's recordings; all statuses included; cursor-based pagination on `(created_at, id)`; status filter query param; default limit 20, max 50 |
 | `DELETE /v1/recordings/{id}` | Soft-delete sets `deleted_at`; 204 No Content on success; 404 if not found or not owned by user |
 | `GET /v1/users/me` | Returns profile including `recording_count` |
@@ -228,18 +228,18 @@ Snapshot tests verify that views render correctly and detect unintended visual r
 | `POST /v1/admin/moderation/{recordingId}/decision` | Accepts `decision: 'approved' | 'rejected'` and optional `notes`; updates recording status; creates `moderation_records` audit trail entry; sends push notification; 403 for non-admin users |
 | `GET /v1/admin/moderation/stats` | Returns `pending_review`, `reviewed_today`, `auto_approved_today`, `auto_rejected_today`, `avg_review_time_sec`; requires admin claim |
 
-#### Firebase JWT Authorizer
+#### APIM JWT Validation (validate-jwt Policy)
 
 | Test Case | Description |
 |-----------|-------------|
-| Valid token | Extracts `uid`, `email`, and custom claims; passes to downstream handler via `event.requestContext.authorizer` |
+| Valid token | APIM `validate-jwt` policy extracts `uid`, `email`, and custom claims from Firebase JWT; passes user ID to downstream handler via `X-User-Id` header |
 | Expired token | Returns 401 `UNAUTHORIZED` |
 | Invalid signature | Returns 401 |
 | Missing Authorization header | Returns 401 |
 | Malformed token (not JWT) | Returns 401 |
 | Admin custom claim | `admin: true` correctly extracted and forwarded |
 | Moderator role | `moderator` role detection |
-| Cached Firebase public keys | Keys cached for 1 hour; refresh on cache miss |
+| Firebase public keys | APIM policy references Firebase JWKS endpoint for signature validation |
 
 #### Zod Schema Validation Tests
 
@@ -259,19 +259,19 @@ Snapshot tests verify that views render correctly and detect unintended visual r
 | Any score above 0.7 | `hate` score = 0.8 -> `AUTO_REJECT` -> status = `rejected` |
 | `hate/threatening` lower threshold | Score = 0.55 (above 0.5 reject threshold for this category) -> `AUTO_REJECT` |
 | `self-harm` lower threshold | Score = 0.55 (above 0.5 reject threshold for this category) -> `AUTO_REJECT` |
-| Uncertain range (0.3-0.7) | `harassment` score = 0.5 -> `HUMAN_REVIEW` -> status = `pending_review`; SQS message sent |
+| Uncertain range (0.3-0.7) | `harassment` score = 0.5 -> `HUMAN_REVIEW` -> status = `pending_review`; Service Bus message sent |
 | Boundary: exactly 0.3 | At auto-approve boundary -> `HUMAN_REVIEW` (conservative) |
 | Boundary: exactly 0.7 | At auto-reject boundary -> `AUTO_REJECT` |
-| Transcription failure | Transcribe job fails -> retry (max 2 attempts, backoff rate 2x); after max retries -> `HUMAN_REVIEW` with transcription failure flag |
+| Transcription failure | Azure AI Speech batch transcription fails -> retry (max 2 attempts, backoff rate 2x); after max retries -> `HUMAN_REVIEW` with transcription failure flag |
 | Empty transcript | Silent audio produces empty transcript -> routed to `HUMAN_REVIEW` |
 | OpenAI Moderation API timeout | Retry with backoff; after max retries -> `HUMAN_REVIEW` |
 | Notification dispatch | Correct APNs payload for approved ("Your recording '{subject}' is now live!") and rejected ("Your recording '{subject}' could not be approved.") |
 | Audio validation | File header validation (AAC/M4A); size < 10MB; duration matches declared `duration_sec` within 5s tolerance; non-audio files rejected before moderation |
-| S3 key movement | Approved files copied from `audio/pending/` to `audio/approved/`; rejected to `audio/rejected/` |
+| Blob container movement | Approved files copied from `audio/pending/` to `audio/approved/`; rejected to `audio/rejected/` |
 
 ### 4.3 Integration Tests
 
-Integration tests run against real PostgreSQL 16 + PostGIS 3.4 via Testcontainers (Docker). AWS services remain mocked via `aws-sdk-client-mock`.
+Integration tests run against real PostgreSQL 16 + PostGIS 3.4 via Testcontainers (Docker). Azure services remain mocked via Azure SDK mocks.
 
 #### Database Integration Tests
 
@@ -293,19 +293,19 @@ Integration tests run against real PostgreSQL 16 + PostGIS 3.4 via Testcontainer
 
 #### API Endpoint Integration Tests
 
-Run Lambda handlers with real DB (Testcontainers) and mocked AWS services.
+Run Azure Functions handlers with real DB (Testcontainers) and mocked Azure services.
 
 | Endpoint | Test Cases |
 |----------|------------|
 | `POST /v1/auth/register` | Full flow: create user -> verify DB row with Firebase UID |
-| `POST /v1/recordings` | Full flow: create metadata -> get pre-signed URL -> verify DB row with `pending_upload` status |
-| `POST /v1/recordings/{id}/upload-complete` | Upload confirm -> status transitions to `pending_moderation` -> Step Functions started |
+| `POST /v1/recordings` | Full flow: create metadata -> get SAS URL -> verify DB row with `pending_upload` status |
+| `POST /v1/recordings/{id}/upload-complete` | Upload confirm -> status transitions to `pending_moderation` -> Durable Functions orchestration started |
 | `GET /v1/recordings/nearby` | Seed DB with recordings at known coords -> query -> verify correct subset returned sorted by distance |
-| `GET /v1/recordings/{id}/playback` | Verify CloudFront signed URL generation with correct expiry |
+| `GET /v1/recordings/{id}/playback` | Verify Azure Front Door SAS URL generation with correct expiry |
 | `GET /v1/recordings/mine` | Seed user's recordings -> verify all statuses returned -> verify pagination |
 | `POST /v1/admin/moderation/{id}/decision` | Approve recording -> status updated -> moderation_records audit entry created -> notification sent |
 | `POST /v1/reports` | Create report -> verify DB row -> verify re-moderation at threshold |
-| Auth flow | Verify authorizer -> handler pipeline with valid/invalid/expired tokens |
+| Auth flow | Verify APIM validate-jwt -> handler pipeline with valid/invalid/expired tokens |
 
 ### 4.4 Database Query Testing with Test Fixtures
 
@@ -348,33 +348,33 @@ backend/tests/fixtures/
 
 ### 4.5 Moderation Pipeline Testing
 
-The moderation pipeline (AWS Step Functions Standard Workflow) is tested at three levels:
+The moderation pipeline (Azure Durable Functions orchestrator) is tested at three levels:
 
-#### Unit: Individual Step Logic
+#### Unit: Individual Activity Function Logic
 
-| Step | Tests |
-|------|-------|
-| `start-transcription.ts` | Correct S3 audio URI passed; language code `en-US`; job name includes recording_id; output bucket configured |
-| `store-transcript.ts` | Reads Transcribe JSON output from S3; extracts plain text; stores in `recordings.transcript` column |
+| Activity Function | Tests |
+|-------------------|-------|
+| `start-transcription.ts` | Correct Blob Storage audio URL passed to Azure AI Speech batch transcription; language code `en-US`; job name includes recording_id; output container configured |
+| `store-transcript.ts` | Reads Azure AI Speech JSON output from Blob Storage; extracts plain text; stores in `recordings.transcript` column |
 | `classify-content.ts` | Transcript sent to OpenAI Moderation API; response parsed; per-category scores extracted (`hate`, `hate/threatening`, `harassment`, `self-harm`, `sexual`, `violence`); raw result stored in `recordings.moderation_scores` JSONB |
 | `evaluate-decision.ts` | Per-category threshold evaluation; auto-approve (all < 0.3); auto-reject (any > 0.7, or > 0.5 for hate/threatening and self-harm); human review (in between); correct moderation_records audit entry created |
 | `validate-audio.ts` | File header check (AAC/M4A magic bytes); size < 10MB; duration within tolerance of declared value; rejects non-audio files |
-| `send-notification.ts` | Correct APNs payload per outcome; user device token lookup; SNS publish call |
+| `send-notification.ts` | Correct APNs payload per outcome; user device token lookup; Azure Notification Hubs send |
 
-#### Integration: Step Functions Workflow
+#### Integration: Durable Functions Orchestration
 
-Using Step Functions Local (Docker) or mocked Step Functions:
+Using Durable Functions test utilities or mocked orchestration context:
 
 | Test | Description |
 |------|-------------|
-| Happy path (approved) | Audio uploaded -> validated -> transcribed -> clean classification (all scores < 0.3) -> S3 copy to `audio/approved/` -> status = `approved` -> push notification |
-| Happy path (rejected) | Audio -> transcribed -> explicit classification (score > 0.7) -> S3 copy to `audio/rejected/` -> status = `rejected` -> push notification |
-| Human review path | Audio -> transcribed -> uncertain (scores between 0.3-0.7) -> SQS message with task token -> status = `pending_review` |
-| Transcription failure + retry | Simulate Transcribe failure -> verify retry (max 2 attempts, backoff 2x) -> eventual success |
+| Happy path (approved) | Audio uploaded -> validated -> transcribed -> clean classification (all scores < 0.3) -> blob copy to `audio/approved/` -> status = `approved` -> push notification |
+| Happy path (rejected) | Audio -> transcribed -> explicit classification (score > 0.7) -> blob copy to `audio/rejected/` -> status = `rejected` -> push notification |
+| Human review path | Audio -> transcribed -> uncertain (scores between 0.3-0.7) -> Service Bus message with orchestration instance ID -> status = `pending_review` |
+| Transcription failure + retry | Simulate Azure AI Speech failure -> verify retry (max 2 attempts, backoff 2x) -> eventual success |
 | OpenAI API failure + retry | Simulate Moderation API failure -> verify retry with backoff |
 | Audio validation failure | Invalid file format detected -> status = `rejected` -> user notified |
 | End-to-end timing | Full pipeline completes within 2 minutes for a 60-second audio file |
-| Human review completion via task token | Admin submits decision -> Step Functions resumes via `SendTaskSuccess` -> routes to approved/rejected -> notification |
+| Human review completion via external event | Admin submits decision -> Durable Functions resumes via `waitForExternalEvent` -> routes to approved/rejected -> notification |
 
 #### Human Review Workflow Tests
 
@@ -393,7 +393,7 @@ Using Step Functions Local (Docker) or mocked Step Functions:
 | Test | Description |
 |------|-------------|
 | Under threshold | 2 reports from distinct users -> recording remains `approved` |
-| At threshold | 3rd report from distinct user -> recording status changes to `pending_review`; removed from discovery; SQS message sent with reports attached |
+| At threshold | 3rd report from distinct user -> recording status changes to `pending_review`; removed from discovery; Service Bus message sent with reports attached |
 | Duplicate report | Same user reports twice -> 409 `DUPLICATE_REPORT`; count stays at 1 |
 | Report on own recording | Returns error (users cannot report their own recordings) |
 
@@ -405,12 +405,12 @@ Tool: Artillery or k6.
 |----------|--------------|------------------|
 | **Discovery query baseline** | 100 concurrent users querying nearby recordings against 100K recordings in DB | p95 response time < 200ms |
 | **Discovery query stress** | 500 concurrent users, sustained for 5 minutes | No errors; p99 < 500ms; DB CPU < 80% |
-| **Recording upload burst** | 50 concurrent uploads in 10 seconds | All pre-signed URLs generated; no S3 throttling |
+| **Recording upload burst** | 50 concurrent uploads in 10 seconds | All SAS URLs generated; no Blob Storage throttling |
 | **Mixed workload** | 70% discovery, 20% playback URL, 10% recording creation | p95 < 300ms across all endpoints |
-| **Moderation pipeline throughput** | 100 recordings submitted in 1 minute | All enter pipeline; no SQS dead letters |
-| **Cold start measurement** | First request after 15 minutes idle (no provisioned concurrency) | Lambda cold start < 3 seconds |
-| **Database connection pool (RDS Proxy)** | Sustained load with 200 concurrent Lambda invocations | No connection exhaustion errors; RDS Proxy multiplexes correctly |
-| **API Gateway throttling** | Exceed per-user rate limits | 429 returned with correct `Retry-After` header; legitimate traffic unaffected |
+| **Moderation pipeline throughput** | 100 recordings submitted in 1 minute | All enter pipeline; no Service Bus dead letters |
+| **Cold start measurement** | First request after 15 minutes idle (Consumption plan) | Azure Functions cold start < 3 seconds |
+| **Database connection pool (PgBouncer)** | Sustained load with 200 concurrent Azure Functions invocations | No connection exhaustion errors; PgBouncer (built-in to Flexible Server) multiplexes correctly |
+| **APIM throttling** | Exceed per-user rate limits | 429 returned with correct `Retry-After` header; legitimate traffic unaffected |
 
 #### Geospatial Query Performance Benchmarks
 
@@ -495,20 +495,20 @@ In addition to Pact contracts:
 | **Maximum length** | Exactly 300 seconds | Accepted; processed normally; `chk_recordings_duration` constraint passes |
 | **Over maximum** | 301 seconds | Rejected at API level (Zod validation: `duration_sec` max 300); never enters moderation |
 | **Non-speech audio** | Dog barking, car horn | Empty/gibberish transcript -> `HUMAN_REVIEW` |
-| **Multilingual** | Spanish narration | Transcribe auto-detects language (future: `IdentifyLanguage`); moderate transcript |
-| **Code-switching** | English with Spanish phrases | Transcribe handles mixed language; moderation evaluates full text |
+| **Multilingual** | Spanish narration | Azure AI Speech auto-detects language (future: `IdentifyLanguage`); moderate transcript |
+| **Code-switching** | English with Spanish phrases | Azure AI Speech handles mixed language; moderation evaluates full text |
 | **Whispered speech** | Very quiet speech | Transcription may be inaccurate; uncertain scores likely -> `HUMAN_REVIEW` |
 | **Multiple speakers** | Two people conversing | Transcribed as single stream; moderated normally |
 | **Audio with beeps** | Self-censored explicit content | Transcript may contain "[inaudible]"; `HUMAN_REVIEW` if uncertain |
 | **Invalid audio file** | Non-audio file with .aac extension | `validate-audio.ts` rejects (checks file header magic bytes); status -> `rejected` before moderation |
-| **Oversized file** | 15 MB audio file | Pre-signed URL has 10MB `Content-Length` constraint; upload fails at S3 level |
+| **Oversized file** | 15 MB audio file | SAS URL has 10MB `Content-Length` constraint; upload fails at Blob Storage level |
 
 ### 6.3 Workflow State Machine Validation
 
 All valid state transitions (from DATABASE.md Section 6.2):
 
 ```
-pending_upload      -> pending_moderation   (S3 upload confirmed via upload-complete endpoint)
+pending_upload      -> pending_moderation   (Blob upload confirmed via upload-complete endpoint)
 pending_moderation  -> approved             (auto-approved by classifier, all scores < 0.3)
 pending_moderation  -> rejected             (auto-rejected by classifier, any score above reject threshold)
 pending_moderation  -> pending_review       (uncertain classification, scores in middle range)
@@ -531,7 +531,7 @@ Tests verify:
 - Each valid transition updates the DB correctly and writes a `moderation_records` audit entry.
 - Each invalid transition is rejected with an appropriate error.
 - `updated_at` timestamp updated on every status change (via trigger).
-- S3 object moved to correct prefix (`audio/approved/` or `audio/rejected/`) on terminal transitions.
+- Blob moved to correct container prefix (`audio/approved/` or `audio/rejected/`) on terminal transitions.
 - Push notification sent only on terminal transitions (approved/rejected).
 
 ---
@@ -542,10 +542,10 @@ Tests verify:
 
 | Test | Method | Target |
 |------|--------|--------|
-| Upload 1 MB audio file (~1 min AAC) to S3 via pre-signed URL | Measure from iOS client on LTE (simulated) | < 5 seconds |
+| Upload 1 MB audio file (~1 min AAC) to Blob Storage via SAS URL | Measure from iOS client on LTE (simulated) | < 5 seconds |
 | Upload 2.4 MB audio file (max ~5 min AAC at 64kbps) | Same | < 10 seconds |
-| Download/stream 1 MB audio from CloudFront | Measure TTFB + full download from edge PoP | TTFB < 100ms; full < 3s |
-| Concurrent uploads (10 users) | Backend: measure pre-signed URL generation latency | < 200ms per URL generation |
+| Download/stream 1 MB audio from Azure Front Door | Measure TTFB + full download from edge PoP | TTFB < 100ms; full < 3s |
+| Concurrent uploads (10 users) | Backend: measure SAS URL generation latency | < 200ms per URL generation |
 | Background upload completion | Upload continues when app is backgrounded (URLSession background config) | Upload completes; `upload-complete` called on resume |
 
 ### 7.2 API Response Time Targets
@@ -561,8 +561,8 @@ Tests verify:
 | `GET /v1/users/me` | 30ms | 100ms | 200ms |
 | `POST /v1/reports` | 50ms | 150ms | 300ms |
 | `POST /v1/admin/moderation/{id}/decision` | 100ms | 200ms | 500ms |
-| Lambda Authorizer (cold) | - | - | < 500ms |
-| Lambda Authorizer (cached, 5 min) | 0ms | 0ms | 0ms (API GW cached) |
+| APIM JWT validation (cold) | - | - | < 500ms |
+| APIM JWT validation (cached) | 0ms | 0ms | 0ms (APIM policy cached) |
 
 ### 7.3 Geospatial Query Scaling
 
@@ -599,14 +599,14 @@ See Section 4.6 for detailed benchmarks. Key tests:
 - [ ] Non-admin users get 403 on `GET /v1/admin/moderation/queue`
 - [ ] Non-admin users get 403 on `POST /v1/admin/moderation/{id}/decision`
 - [ ] Admin custom claim cannot be self-assigned by client (validated server-side against Firebase public keys)
-- [ ] Lambda authorizer caches response for 5 minutes (verify via API Gateway config)
+- [ ] APIM `validate-jwt` policy correctly validates tokens against Firebase JWKS endpoint
 
 ### 8.2 Input Validation
 
 - [ ] SQL injection via subject/description fields (Kysely parameterized queries prevent this)
 - [ ] SQL injection via latitude/longitude query parameters
 - [ ] XSS in subject/description fields (stored XSS -- content served as JSON, not HTML)
-- [ ] Oversized request body rejected (API Gateway payload size limit)
+- [ ] Oversized request body rejected (APIM payload size limit)
 - [ ] Invalid JSON body returns 400 `VALIDATION_ERROR`, not 500 `INTERNAL_ERROR`
 - [ ] Path traversal in recording ID parameter (UUID format enforced)
 - [ ] Unicode/emoji in text fields handled correctly
@@ -615,16 +615,16 @@ See Section 4.6 for detailed benchmarks. Key tests:
 - [ ] `latitude` boundary values: -90.001 (rejected), -90 (accepted), 90 (accepted), 90.001 (rejected)
 - [ ] `radius` boundary values: 49 (rejected), 50 (accepted), 5000 (accepted), 5001 (rejected, 422 `INVALID_RADIUS`)
 
-### 8.3 S3 and File Security
+### 8.3 Blob Storage and File Security
 
-- [ ] Pre-signed upload URLs expire after 15 minutes
-- [ ] Pre-signed upload URL scoped to correct S3 key (user cannot overwrite other files)
-- [ ] Pre-signed upload URL only allows PUT (not GET or DELETE)
-- [ ] Pre-signed URL enforces `Content-Type: audio/aac` and max `Content-Length: 10MB`
+- [ ] SAS upload URLs expire after 15 minutes
+- [ ] SAS upload URL scoped to correct blob path (user cannot overwrite other files)
+- [ ] SAS upload URL only allows write (not read or delete)
+- [ ] SAS URL enforces `Content-Type: audio/aac` and max `Content-Length: 10MB`
 - [ ] Uploaded file validated (audio file header check in `validate-audio.ts`)
-- [ ] S3 bucket has all four Block Public Access settings enabled
-- [ ] CloudFront Origin Access Control (OAC) -- S3 only accessible via CloudFront
-- [ ] CloudFront signed URLs expire correctly (1 hour)
+- [ ] Blob Storage container has private access level (no anonymous access)
+- [ ] Azure Front Door Origin Access -- Blob Storage only accessible via Front Door
+- [ ] Azure Front Door SAS URLs expire correctly (1 hour)
 - [ ] Audio files organized by status prefix (`audio/pending/`, `audio/approved/`, `audio/rejected/`)
 
 ### 8.4 Rate Limiting
@@ -643,7 +643,7 @@ See Section 4.6 for detailed benchmarks. Key tests:
 - [ ] Discovery endpoint does not reveal other users' current locations
 - [ ] Discovery endpoint snaps coordinates to ~10m grid (prevents exact location scraping)
 - [ ] Minimum discovery radius (50m) enforced
-- [ ] Deleted recordings' audio files permanently deleted from S3 after 30 days (lifecycle policy)
+- [ ] Deleted recordings' audio files permanently deleted from Blob Storage after 30 days (lifecycle management policy)
 - [ ] User account deletion anonymizes user row (`display_name` = 'Deleted User', `email` = NULL, `firebase_uid` = 'deleted_<uuid>')
 - [ ] User account deletion deletes associated likes and plays
 - [ ] User account deletion soft-deletes all recordings
@@ -652,24 +652,24 @@ See Section 4.6 for detailed benchmarks. Key tests:
 
 ### 8.6 Transport Security
 
-- [ ] All API communication over TLS 1.2+ (API Gateway HTTPS only)
-- [ ] S3 pre-signed URLs use HTTPS
-- [ ] CloudFront URLs use HTTPS (HTTP redirects to HTTPS)
-- [ ] RDS connections use TLS (`rds.force_ssl = 1` parameter group)
+- [ ] All API communication over TLS 1.2+ (APIM HTTPS only)
+- [ ] Blob Storage SAS URLs use HTTPS
+- [ ] Azure Front Door URLs use HTTPS (HTTP redirects to HTTPS)
+- [ ] PostgreSQL Flexible Server connections use TLS (`require_secure_transport = ON`)
 - [ ] iOS app enforces ATS (App Transport Security)
 - [ ] No sensitive data in URL query parameters (lat/lng are not sensitive per design; user tokens only in headers)
 
 ### 8.7 Infrastructure Security
 
-- [ ] RDS in private subnets, no public IP
-- [ ] Lambda in VPC private subnets with NAT Gateway for outbound
-- [ ] VPC endpoints for S3 and Secrets Manager (avoids NAT for AWS services)
-- [ ] Database credentials stored in Secrets Manager, rotated every 30 days
+- [ ] Azure DB for PostgreSQL Flexible Server in VNet-integrated subnet, no public access
+- [ ] Azure Functions with VNet integration for outbound traffic to database
+- [ ] Private endpoints for Blob Storage and Key Vault (avoids public internet)
+- [ ] Database credentials stored in Azure Key Vault, accessed via managed identity
 - [ ] Separate database roles: `app_user` (no DDL), `migration_user` (DDL)
-- [ ] Lambda execution roles follow least privilege (per-function roles)
-- [ ] GitHub Actions uses OIDC federation (no static AWS credentials)
-- [ ] Production AWS account has SCPs restricting `DeleteBucket`, `DeleteDBInstance`
-- [ ] CloudFormation stack termination protection enabled in production
+- [ ] Azure Functions managed identity follows least privilege (per-function role assignments)
+- [ ] GitHub Actions uses OIDC federation to Azure AD (no static credentials)
+- [ ] Production resource group has Azure Policy denying deletion of database and storage
+- [ ] Bicep deployment with `--mode Complete` restricted to prevent accidental resource deletion
 
 ---
 
@@ -691,7 +691,7 @@ Commit -> Lint/Format -> Unit Tests -> Integration Tests -> Contract Tests -> Bu
 | **Type Check** | TypeScript strict mode (`tsc --noEmit`) | Zero errors | < 1 min |
 | **Unit Tests (iOS)** | XCTest + Swift Testing suite, snapshot tests | All pass; coverage >= 80% on changed files | < 3 min |
 | **Unit Tests (Backend)** | Vitest suite | All pass; coverage >= 80% on changed files | < 2 min |
-| **CDK Snapshot Tests** | Infrastructure diff check | Snapshot matches or intentionally updated | < 1 min |
+| **Bicep Validation** | `az bicep build` and `az deployment group what-if` | Templates compile; no unexpected changes | < 1 min |
 | **Contract Tests** | Pact consumer verification (iOS PR) or provider verification (backend PR) | All contracts satisfied | < 1 min |
 | **Security Scan** | `npm audit` (backend), Swift package audit (iOS) | No critical/high vulnerabilities | < 1 min |
 
@@ -703,7 +703,7 @@ Commit -> Lint/Format -> Unit Tests -> Integration Tests -> Contract Tests -> Bu
 |-------|-----------|---------------|-------------|
 | **Full Unit + Integration Tests** | All unit tests + DB integration tests (Testcontainers with PostGIS) | All pass | < 10 min |
 | **Build iOS App** | Xcode 16 archive build (`xcodebuild`) | Build succeeds | < 5 min |
-| **Deploy to Staging** | CDK deploy to staging AWS account (OIDC auth) | Deployment succeeds | < 5 min |
+| **Deploy to Staging** | Bicep deployment to staging resource group (OIDC auth to Azure AD) | Deployment succeeds | < 5 min |
 | **Run DB Migrations** | `npm run migrate:up` against staging DB | Migrations succeed | < 1 min |
 | **E2E Smoke Tests** | Core flows against staging (record, discover, play) | All pass | < 10 min |
 | **Smoke Test** | Hit health check endpoint on staging | 200 OK | < 1 min |
@@ -717,7 +717,7 @@ Commit -> Lint/Format -> Unit Tests -> Integration Tests -> Contract Tests -> Bu
 | **Full E2E Suite** | All XCUITest flows against staging | All pass |
 | **Load Test (short)** | 5-minute Artillery/k6 run against staging | p95 within targets (Section 7.2) |
 | **Security Scan** | `npm audit`, Snyk or Trivy container scan | No critical/high vulnerabilities |
-| **CDK Diff Review** | `cdk diff` output reviewed for unexpected changes | Approved by tech lead |
+| **Bicep What-If Review** | `az deployment group what-if` output reviewed for unexpected changes | Approved by tech lead |
 | **Manual QA Sign-off** | QA engineer verifies release candidate on staging | Sign-off recorded in deploy ticket |
 
 #### Nightly / Weekly
@@ -738,9 +738,9 @@ Commit -> Lint/Format -> Unit Tests -> Integration Tests -> Contract Tests -> Bu
 | iOS Build | GitHub-hosted macOS runner (Xcode 16) or self-hosted Mac |
 | Backend Tests | GitHub-hosted Linux runner (Ubuntu) |
 | Integration Tests | Linux runner with Docker (Testcontainers: PostgreSQL 16 + PostGIS 3.4) |
-| AWS Authentication | OIDC federation (no static credentials) |
-| Staging Environment | Dedicated AWS account (`hearhere-staging`), deployed via CDK |
-| Production Environment | Dedicated AWS account (`hearhere-prod`), manual promotion |
+| Azure Authentication | OIDC federation to Azure AD (no static credentials) |
+| Staging Environment | Dedicated Azure resource group (`rg-hearhere-staging`), deployed via Bicep |
+| Production Environment | Dedicated Azure resource group (`rg-hearhere-prod`), manual promotion |
 | Test Results | JUnit XML format for GitHub Actions test reporting |
 | Coverage Reports | Uploaded as PR comment (Codecov or similar) |
 
@@ -780,11 +780,11 @@ Steps:
 # Triggers: push to main, PRs targeting main (changes in infra/)
 Steps:
   1. Checkout code
-  2. Setup Node.js 20
-  3. Install CDK dependencies (npm ci)
-  4. CDK synth (validate templates compile)
-  5. CDK diff (post infrastructure changes as PR comment)
-  6. CDK snapshot tests (vitest)
+  2. Setup Azure CLI
+  3. Authenticate via OIDC to Azure AD
+  4. Bicep lint and build (az bicep build)
+  5. Bicep what-if (az deployment group what-if -- post changes as PR comment)
+  6. Bicep module tests (vitest)
 ```
 
 ---
@@ -827,7 +827,7 @@ function buildRecording(overrides: Partial<Recording> = {}): Recording {
     longitude: -122.4194,
     status: 'approved',
     duration_sec: 30,
-    audio_s3_key: 'audio/approved/test.aac',
+    audio_blob_path: 'audio/approved/test.aac',
     audio_format: 'aac',
     play_count: 0,
     like_count: 0,
@@ -1027,7 +1027,7 @@ hear-here/
 |       |   |   +-- decision.test.ts
 |       |   |   +-- stats.test.ts
 |       |   +-- authorizer/
-|       |   |   +-- authorizer.test.ts
+|       |   |   +-- jwt-validation.test.ts
 |       |   +-- moderation/
 |       |   |   +-- validate-audio.test.ts
 |       |   |   +-- start-transcription.test.ts
@@ -1070,7 +1070,7 @@ hear-here/
 |       +-- security/
 |       |   +-- auth-bypass.test.ts
 |       |   +-- input-validation.test.ts
-|       |   +-- s3-access.test.ts
+|       |   +-- blob-access.test.ts
 |       |   +-- rate-limiting.test.ts
 |       +-- fixtures/
 |           +-- audio/
@@ -1091,16 +1091,16 @@ hear-here/
 |           +-- factories.ts
 +-- infra/
     +-- test/
-        +-- network-stack.test.ts
-        +-- storage-stack.test.ts
-        +-- database-stack.test.ts
-        +-- api-stack.test.ts
-        +-- moderation-stack.test.ts
-        +-- cdn-stack.test.ts
-        +-- notification-stack.test.ts
-        +-- monitoring-stack.test.ts
-        +-- dns-stack.test.ts
-        +-- snapshots/                # CDK snapshot files
+        +-- main.test.ts              # Bicep template validation tests
+        +-- network.test.ts
+        +-- storage.test.ts
+        +-- database.test.ts
+        +-- functions.test.ts
+        +-- apim.test.ts
+        +-- frontdoor.test.ts
+        +-- servicebus.test.ts
+        +-- notification-hubs.test.ts
+        +-- monitoring.test.ts
 ```
 
 ---
@@ -1121,9 +1121,9 @@ hear-here/
 | Flaky test count | 0 | CI flake tracker |
 | Moderation false positive rate | < 5% | Moderation audit (human review of auto-approved) |
 | Moderation false negative rate | < 1% | Moderation audit (reports on auto-approved content) |
-| API p95 latency | Per Section 7.2 targets | CloudWatch custom metrics |
-| Discovery query p95 at current dataset size | Per Section 4.6 targets | CloudWatch `DiscoveryQueryLatency` |
-| Lambda cold start rate | < 5% of invocations | CloudWatch `ColdStart` metric |
-| Moderation pipeline end-to-end time | < 2 minutes (median) | CloudWatch `ModerationLatency` |
-| SQS human review queue depth | < 100 at end of business day | CloudWatch alarm |
-| RDS CPU utilization (production) | < 80% sustained | CloudWatch alarm |
+| API p95 latency | Per Section 7.2 targets | Application Insights custom metrics |
+| Discovery query p95 at current dataset size | Per Section 4.6 targets | Application Insights `DiscoveryQueryLatency` |
+| Azure Functions cold start rate | < 5% of invocations | Application Insights `ColdStart` metric |
+| Moderation pipeline end-to-end time | < 2 minutes (median) | Application Insights `ModerationLatency` |
+| Service Bus human review queue depth | < 100 at end of business day | Azure Monitor alert |
+| PostgreSQL CPU utilization (production) | < 80% sustained | Azure Monitor alert |
