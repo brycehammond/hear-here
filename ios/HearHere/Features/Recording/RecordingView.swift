@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreLocation
 import SwiftUI
 
@@ -20,19 +21,28 @@ struct RecordingView: View {
                     microphonePermissionView
                 case .idle:
                     idleView
-                case .recording:
+                case .recording, .paused:
                     recordingActiveView
-                case .recorded:
+                case .recorded(let url):
                     Color.clear
                         .onAppear {
-                            coordinator.showMetadata()
+                            viewModel.phase = .editing(url)
+                            coordinator.showEditing()
                         }
+                case .editing:
+                    Color.clear
+                }
+
+                if let countdown = viewModel.countdownRemaining {
+                    countdownOverlay(count: countdown)
                 }
             }
             .navigationTitle("Record")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: RecordingCoordinator.Destination.self) { destination in
                 switch destination {
+                case .editing:
+                    editingDestinationView
                 case .metadata:
                     RecordingMetadataView(viewModel: viewModel, coordinator: coordinator)
                 case .confirmation:
@@ -43,6 +53,32 @@ struct RecordingView: View {
                 viewModel.checkPermissions()
             }
         }
+    }
+
+    // MARK: - Editing Destination
+
+    private var editingDestinationView: some View {
+        let fileURL = viewModel.recordedFileURL ?? URL(fileURLWithPath: "/dev/null")
+        let duration = viewModel.elapsedTime
+
+        let editVM = AudioEditingViewModel(
+            fileURL: fileURL,
+            originalDuration: duration,
+            waveformProvider: WaveformDataProvider(),
+            audioEngine: AudioEngine()
+        )
+
+        return AudioEditingView(
+            viewModel: editVM,
+            onComplete: { editedURL in
+                viewModel.recordedFileURL = editedURL
+                coordinator.showMetadata()
+            },
+            onCancel: {
+                viewModel.reRecord()
+                coordinator.popToRoot()
+            }
+        )
     }
 
     // MARK: - Idle State
@@ -72,6 +108,18 @@ struct RecordingView: View {
         VStack(spacing: 24) {
             Spacer()
 
+            if viewModel.phase == .paused {
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.orange)
+                    .symbolEffect(.pulse)
+                    .accessibilityLabel("Recording paused")
+
+                Text("Paused")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+            }
+
             if viewModel.isInCountdown {
                 Text(viewModel.formattedRemainingTime)
                     .font(.system(.largeTitle, design: .monospaced))
@@ -93,7 +141,31 @@ struct RecordingView: View {
                 .padding(.horizontal)
                 .accessibilityLabel("Audio waveform visualization")
 
-            recordButton(isRecording: true)
+            InputLevelMeter(
+                level: viewModel.normalizedPeakLevel,
+                isClipping: viewModel.isPeakClipping
+            )
+            .padding(.horizontal)
+
+            HStack(spacing: 32) {
+                // Pause / Resume button
+                Button {
+                    if viewModel.phase == .paused {
+                        viewModel.resumeRecording()
+                    } else {
+                        viewModel.pauseRecording()
+                    }
+                } label: {
+                    Image(systemName: viewModel.phase == .paused ? "play.circle.fill" : "pause.circle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(viewModel.phase == .paused ? .green : .orange)
+                }
+                .accessibilityLabel(viewModel.phase == .paused ? "Resume recording" : "Pause recording")
+                .frame(minWidth: 44, minHeight: 44)
+
+                // Stop button
+                recordButton(isRecording: true)
+            }
 
             Button(role: .cancel) {
                 viewModel.cancelRecording()
@@ -139,6 +211,22 @@ struct RecordingView: View {
         .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
         .accessibilityHint(isRecording ? "Stops the current recording" : "Begins recording audio")
         .frame(minWidth: 80, minHeight: 80)
+    }
+
+    // MARK: - Countdown Overlay
+
+    private func countdownOverlay(count: Int) -> some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            Text("\(count)")
+                .font(.system(size: 120, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .animation(.easeInOut, value: count)
+        }
+        .accessibilityLabel("Recording starts in \(count)")
     }
 
     // MARK: - Microphone Permission
@@ -253,6 +341,7 @@ private final class PreviewAudioRecorder: AudioRecorderProtocol, @unchecked Send
     var currentTime: TimeInterval = 0
     var remainingTime: TimeInterval = 300
     var waveformSamples: [Float]
+    var currentPeakPower: Float = -30
 
     init(mockSamples: [Float] = []) {
         self.waveformSamples = mockSamples
@@ -260,6 +349,8 @@ private final class PreviewAudioRecorder: AudioRecorderProtocol, @unchecked Send
 
     func startRecording() throws {}
     func stopRecording() {}
+    func pauseRecording() {}
+    func resumeRecording() {}
     func cancelRecording() {}
 }
 

@@ -2,6 +2,9 @@ import AVFoundation
 import CoreLocation
 import Foundation
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// State machine representing the recording flow phases.
 enum RecordingPhase: Equatable {
@@ -11,14 +14,21 @@ enum RecordingPhase: Equatable {
     case permissionNeeded
     /// Actively recording audio.
     case recording
+    /// Recording is paused.
+    case paused
     /// Recording complete, audio file available at the URL.
     case recorded(URL)
+    /// Audio is being edited before metadata entry.
+    case editing(URL)
 
     static func == (lhs: RecordingPhase, rhs: RecordingPhase) -> Bool {
         switch (lhs, rhs) {
-        case (.idle, .idle), (.permissionNeeded, .permissionNeeded), (.recording, .recording):
+        case (.idle, .idle), (.permissionNeeded, .permissionNeeded),
+             (.recording, .recording), (.paused, .paused):
             return true
         case (.recorded(let a), .recorded(let b)):
+            return a == b
+        case (.editing(let a), .editing(let b)):
             return a == b
         default:
             return false
@@ -38,6 +48,7 @@ final class RecordingViewModel {
     var phase: RecordingPhase = .idle
     var elapsedTime: TimeInterval = 0
     var error: Error?
+    var countdownRemaining: Int?
 
     var remainingTime: TimeInterval {
         max(0, AudioRecorder.maxDuration - elapsedTime)
@@ -49,6 +60,14 @@ final class RecordingViewModel {
 
     var waveformSamples: [Float] {
         audioRecorder.waveformSamples
+    }
+
+    var normalizedPeakLevel: Float {
+        InputLevelMeter.normalizeDecibels(audioRecorder.currentPeakPower)
+    }
+
+    var isPeakClipping: Bool {
+        InputLevelMeter.isClipping(decibelLevel: audioRecorder.currentPeakPower)
     }
 
     var formattedElapsedTime: String {
@@ -75,6 +94,7 @@ final class RecordingViewModel {
     private let audioRecorder: any AudioRecorderProtocol
     private let locationService: any LocationServiceProtocol
     private var timer: Timer?
+    private var countdownTask: Task<Void, Never>?
 
     init(audioRecorder: any AudioRecorderProtocol, locationService: any LocationServiceProtocol) {
         self.audioRecorder = audioRecorder
@@ -108,18 +128,31 @@ final class RecordingViewModel {
 
     func startRecording() {
         error = nil
-        do {
-            try audioRecorder.startRecording()
-            phase = .recording
-            elapsedTime = 0
-            startTimer()
-            locationService.startUpdating(accuracy: .bestForRecording)
-        } catch {
-            self.error = error
+        countdownTask?.cancel()
+        countdownTask = Task { @MainActor in
+            for i in (1...3).reversed() {
+                countdownRemaining = i
+                triggerHaptic()
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { countdownRemaining = nil; return }
+            }
+            countdownRemaining = nil
+            do {
+                try audioRecorder.startRecording()
+                phase = .recording
+                elapsedTime = 0
+                startTimer()
+                locationService.startUpdating(accuracy: .bestForRecording)
+                triggerHaptic()
+            } catch {
+                self.error = error
+            }
         }
     }
 
     func stopRecording() {
+        countdownTask?.cancel()
+        countdownRemaining = nil
         audioRecorder.stopRecording()
         stopTimer()
         if case .finished(let url) = audioRecorder.state {
@@ -128,9 +161,24 @@ final class RecordingViewModel {
             selectedCoordinate = locationService.currentLocation?.coordinate
         }
         locationService.stopUpdating()
+        triggerHaptic()
+    }
+
+    func pauseRecording() {
+        audioRecorder.pauseRecording()
+        phase = .paused
+        triggerHaptic()
+    }
+
+    func resumeRecording() {
+        audioRecorder.resumeRecording()
+        phase = .recording
+        triggerHaptic()
     }
 
     func cancelRecording() {
+        countdownTask?.cancel()
+        countdownRemaining = nil
         audioRecorder.cancelRecording()
         stopTimer()
         elapsedTime = 0
@@ -187,5 +235,12 @@ final class RecordingViewModel {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func triggerHaptic() {
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        #endif
     }
 }

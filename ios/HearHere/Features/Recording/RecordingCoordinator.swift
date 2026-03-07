@@ -11,8 +11,13 @@ final class RecordingCoordinator {
     var showLocationPicker = false
 
     enum Destination: Hashable {
+        case editing
         case metadata
         case confirmation
+    }
+
+    func showEditing() {
+        path.append(Destination.editing)
     }
 
     func showMetadata() {

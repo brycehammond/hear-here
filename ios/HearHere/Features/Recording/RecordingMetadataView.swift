@@ -1,3 +1,4 @@
+import AVFoundation
 import MapKit
 import SwiftUI
 
@@ -170,6 +171,10 @@ struct RecordingMetadataView: View {
 
             if let fileURL = viewModel.recordedFileURL {
                 AudioPreviewPlayer(fileURL: fileURL)
+
+                MetadataWaveformView(fileURL: fileURL)
+                    .frame(height: 60)
+                    .padding(.top, 4)
             }
         }
     }
@@ -203,6 +208,63 @@ struct RecordingMetadataView: View {
             .accessibilityLabel("Re-record")
             .accessibilityHint("Discards this recording and starts over")
         }
+    }
+}
+
+// MARK: - Metadata Waveform View
+
+/// Loads and displays a PCM waveform asynchronously for the metadata audio preview.
+private struct MetadataWaveformView: View {
+    let fileURL: URL
+    @State private var peaks: [Float] = []
+    @State private var duration: TimeInterval = 0
+    @State private var currentTime: TimeInterval = 0
+    @State private var isLoading = true
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel("Loading waveform")
+            } else if peaks.isEmpty {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Theme.waveformBackground)
+                    .overlay {
+                        Text("No waveform data")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+            } else {
+                PCMWaveformView(
+                    peaks: peaks,
+                    duration: duration,
+                    currentTime: $currentTime,
+                    selectionRange: .constant(nil)
+                )
+                .accessibilityLabel("Audio waveform preview, \(Int(duration)) seconds")
+            }
+        }
+        .background(Theme.waveformBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task {
+            await loadWaveform()
+        }
+    }
+
+    private func loadWaveform() async {
+        let provider = WaveformDataProvider()
+        do {
+            let data = try await provider.extractWaveform(from: fileURL, targetBinCount: 200)
+            peaks = data.peaks
+            let asset = AVAsset(url: fileURL)
+            if let dur = try? await asset.load(.duration) {
+                duration = CMTimeGetSeconds(dur)
+            }
+        } catch {
+            // Graceful fallback: show empty state
+        }
+        isLoading = false
     }
 }
 
@@ -284,8 +346,11 @@ private final class PreviewMetadataRecorder: AudioRecorderProtocol, @unchecked S
     var currentTime: TimeInterval = 0
     var remainingTime: TimeInterval = 300
     var waveformSamples: [Float] = []
+    var currentPeakPower: Float = -160
     func startRecording() throws {}
     func stopRecording() {}
+    func pauseRecording() {}
+    func resumeRecording() {}
     func cancelRecording() {}
 }
 

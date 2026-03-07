@@ -70,6 +70,22 @@ final class AudioSessionManager: Sendable {
         #endif
     }
 
+    // MARK: - Input Ports
+
+    #if os(iOS)
+    /// Returns the list of available audio input ports.
+    func availableInputPorts() -> [AVAudioSessionPortDescription] {
+        session.availableInputs ?? []
+    }
+
+    /// Selects the preferred audio input port.
+    /// - Parameter port: The port description to set as the preferred input.
+    /// - Throws: If the preferred input cannot be set.
+    func selectInputPort(_ port: AVAudioSessionPortDescription) throws {
+        try session.setPreferredInput(port)
+    }
+    #endif
+
     // MARK: - Private
 
     #if os(iOS)

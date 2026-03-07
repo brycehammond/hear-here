@@ -20,6 +20,21 @@ enum RecordingState: Sendable {
     case failed(Error)
 }
 
+/// Recording quality presets controlling the AAC bit rate.
+enum RecordingQuality: Sendable {
+    /// Standard quality at 64 kbps (~2.4 MB for 5 min).
+    case standard
+    /// High quality at 128 kbps (~4.8 MB for 5 min).
+    case high
+
+    var bitRate: Int {
+        switch self {
+        case .standard: return 64_000
+        case .high: return 128_000
+        }
+    }
+}
+
 /// Protocol for audio recording, enabling mock injection for testing.
 protocol AudioRecorderProtocol: Sendable {
     /// The current recording state.
@@ -35,12 +50,21 @@ protocol AudioRecorderProtocol: Sendable {
     /// Values are normalized to 0.0...1.0.
     var waveformSamples: [Float] { get }
 
+    /// The current peak power in dB for the primary channel.
+    var currentPeakPower: Float { get }
+
     /// Starts recording audio to a new temporary file.
     /// - Throws: If the audio session or recorder cannot be configured.
     func startRecording() throws
 
     /// Stops the current recording and finalizes the audio file.
     func stopRecording()
+
+    /// Pauses the current recording.
+    func pauseRecording()
+
+    /// Resumes a paused recording.
+    func resumeRecording()
 
     /// Discards the current recording and returns to the idle state.
     func cancelRecording()
@@ -70,6 +94,7 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
     private(set) var state: RecordingState = .idle
     private(set) var currentTime: TimeInterval = 0
     private(set) var waveformSamples: [Float] = []
+    private(set) var currentPeakPower: Float = -160
 
     var remainingTime: TimeInterval {
         max(0, Self.maxDuration - currentTime)
@@ -86,11 +111,16 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
     private var meteringTimer: Timer?
     @ObservationIgnored
     private let audioSession: AudioSessionManager
+    @ObservationIgnored
+    private let quality: RecordingQuality
 
-    /// Creates an audio recorder with the given audio session manager.
-    /// - Parameter audioSession: The session manager for configuring AVAudioSession.
-    init(audioSession: AudioSessionManager = AudioSessionManager()) {
+    /// Creates an audio recorder with the given audio session manager and quality.
+    /// - Parameters:
+    ///   - audioSession: The session manager for configuring AVAudioSession.
+    ///   - quality: The recording quality preset (default: `.standard`).
+    init(audioSession: AudioSessionManager = AudioSessionManager(), quality: RecordingQuality = .standard) {
         self.audioSession = audioSession
+        self.quality = quality
         super.init()
     }
 
@@ -98,7 +128,7 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
         try audioSession.configureForRecording()
 
         let fileURL = Self.newRecordingURL()
-        let recorder = try AVAudioRecorder(url: fileURL, settings: Self.recordingSettings)
+        let recorder = try AVAudioRecorder(url: fileURL, settings: recordingSettings)
         recorder.delegate = self
         recorder.isMeteringEnabled = true
 
@@ -115,10 +145,24 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
     }
 
     func stopRecording() {
-        guard let recorder, recorder.isRecording else { return }
+        guard let recorder, recorder.isRecording || state.isPaused else { return }
         stopMeteringTimer()
         recorder.stop()
         state = .finished(recorder.url)
+    }
+
+    func pauseRecording() {
+        guard let recorder, recorder.isRecording else { return }
+        recorder.pause()
+        stopMeteringTimer()
+        state = .paused
+    }
+
+    func resumeRecording() {
+        guard let recorder, case .paused = state else { return }
+        recorder.record()
+        state = .recording
+        startMeteringTimer()
     }
 
     func cancelRecording() {
@@ -135,13 +179,15 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
 
     // MARK: - Private
 
-    private static nonisolated(unsafe) let recordingSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: 44_100,
-        AVNumberOfChannelsKey: 1,
-        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        AVEncoderBitRateKey: 64_000,
-    ]
+    private var recordingSettings: [String: Any] {
+        [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44_100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVEncoderBitRateKey: quality.bitRate,
+        ]
+    }
 
     private static func newRecordingURL() -> URL {
         let directory = FileManager.default.temporaryDirectory
@@ -169,6 +215,8 @@ final class AudioRecorder: NSObject, @unchecked Sendable, AudioRecorderProtocol 
         let averagePower = recorder.averagePower(forChannel: 0)
         let normalizedPower = Self.normalizeDecibels(averagePower)
         waveformSamples.append(normalizedPower)
+
+        currentPeakPower = recorder.peakPower(forChannel: 0)
 
         // Auto-stop is handled by AVAudioRecorder's forDuration parameter,
         // which will call the delegate's audioRecorderDidFinishRecording.
@@ -206,6 +254,12 @@ extension RecordingState {
     /// Whether the recorder is actively capturing audio.
     var isRecording: Bool {
         if case .recording = self { return true }
+        return false
+    }
+
+    /// Whether the recorder is paused.
+    var isPaused: Bool {
+        if case .paused = self { return true }
         return false
     }
 }

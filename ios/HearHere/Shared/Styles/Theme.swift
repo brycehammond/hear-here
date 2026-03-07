@@ -62,6 +62,27 @@ enum Theme {
     static let onSurfaceSecondary = Color(nsColor: .secondaryLabelColor)
     #endif
 
+    // MARK: - Waveform & Editing Colors
+
+    /// Accent-based color for waveform bars.
+    static let waveformForeground = Color.accentColor
+
+    /// Subtle background for waveform container.
+    #if os(iOS)
+    static let waveformBackground = Color(uiColor: .tertiarySystemFill)
+    #else
+    static let waveformBackground = Color(nsColor: .controlBackgroundColor)
+    #endif
+
+    /// Semi-transparent overlay for selected region.
+    static let selectionHighlight = Color.accentColor.opacity(0.2)
+
+    /// Bright color for the playhead line.
+    static let playheadColor = Color.accentColor
+
+    /// Red color for clipping warnings.
+    static let clippingIndicator = Color.red
+
     // MARK: - Spacing
 
     /// Extra-small spacing: 4pt.

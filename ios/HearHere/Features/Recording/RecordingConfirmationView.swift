@@ -341,8 +341,11 @@ private final class PreviewConfirmRecorder: AudioRecorderProtocol, @unchecked Se
     var currentTime: TimeInterval = 0
     var remainingTime: TimeInterval = 300
     var waveformSamples: [Float] = []
+    var currentPeakPower: Float = -160
     func startRecording() throws {}
     func stopRecording() {}
+    func pauseRecording() {}
+    func resumeRecording() {}
     func cancelRecording() {}
 }
 

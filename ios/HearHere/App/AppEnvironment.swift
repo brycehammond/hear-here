@@ -25,6 +25,10 @@ struct AudioPlayerKey: EnvironmentKey {
     static let defaultValue: any AudioPlayerProtocol = AudioPlayer()
 }
 
+struct AudioEngineKey: EnvironmentKey {
+    static let defaultValue: any AudioEngineProtocol = AudioEngine()
+}
+
 struct UploadManagerKey: EnvironmentKey {
     static let defaultValue: UploadManager = UploadManager()
 }
@@ -65,6 +69,11 @@ extension EnvironmentValues {
         set { self[AudioPlayerKey.self] = newValue }
     }
 
+    var audioEngine: any AudioEngineProtocol {
+        get { self[AudioEngineKey.self] }
+        set { self[AudioEngineKey.self] = newValue }
+    }
+
     var uploadManager: UploadManager {
         get { self[UploadManagerKey.self] }
         set { self[UploadManagerKey.self] = newValue }
@@ -98,6 +107,7 @@ enum AppEnvironment {
         let locationService = LocationService()
         let audioRecorder = AudioRecorder()
         let audioPlayer = AudioPlayer()
+        let audioEngine = AudioEngine()
         let uploadManager = UploadManager()
         let cacheManager = CacheManager()
         let networkMonitor = NetworkMonitor()
@@ -108,6 +118,7 @@ enum AppEnvironment {
             .environment(\.locationService, locationService)
             .environment(\.audioRecorder, audioRecorder)
             .environment(\.audioPlayer, audioPlayer)
+            .environment(\.audioEngine, audioEngine)
             .environment(\.uploadManager, uploadManager)
             .environment(\.cacheManager, cacheManager)
             .environment(\.networkMonitor, networkMonitor)
