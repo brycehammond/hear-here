@@ -24,7 +24,9 @@ struct RecordingDetailView: View {
             .padding()
         }
         .navigationTitle("Recording")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .alert("Delete Recording?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
                 Task {
@@ -137,7 +139,7 @@ struct RecordingDetailView: View {
             HStack(spacing: 12) {
                 Image(systemName: "play.circle.fill")
                     .font(.title)
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Play recording preview")
                     .accessibilityHint("Plays back your recording")

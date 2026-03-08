@@ -29,7 +29,9 @@ struct RecordingMetadataView: View {
             .padding()
         }
         .navigationTitle("Details")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .sheet(isPresented: $coordinator.showLocationPicker) {
             LocationPickerView(
                 selectedCoordinate: $viewModel.selectedCoordinate,
@@ -92,7 +94,11 @@ struct RecordingMetadataView: View {
                 .frame(minHeight: 80)
                 .scrollContentBackground(.hidden)
                 .padding(8)
-                .background(Color(.systemGray6))
+                #if os(iOS)
+                .background(Color(UIColor.systemGray6))
+                #else
+                .background(Color.gray.opacity(0.15))
+                #endif
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .focused($focusedField, equals: .description)
                 .onChange(of: viewModel.descriptionText) { _, newValue in
@@ -135,7 +141,11 @@ struct RecordingMetadataView: View {
                 .accessibilityLabel("Map showing recording location")
             } else {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemGray5))
+                    #if os(iOS)
+                    .fill(Color(UIColor.systemGray5))
+                    #else
+                    .fill(Color.gray.opacity(0.2))
+                    #endif
                     .frame(height: 160)
                     .overlay {
                         VStack(spacing: 8) {
@@ -282,7 +292,7 @@ private struct AudioPreviewPlayer: View {
             } label: {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title)
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel(isPlaying ? "Pause preview" : "Play preview")
@@ -300,7 +310,11 @@ private struct AudioPreviewPlayer: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray6))
+        #if os(iOS)
+        .background(Color(UIColor.systemGray6))
+        #else
+        .background(Color.gray.opacity(0.15))
+        #endif
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

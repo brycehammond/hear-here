@@ -42,6 +42,9 @@ public class HearHereDbContext : DbContext
                 t.HasCheckConstraint(
                     "chk_users_role",
                     "role IN ('user', 'moderator', 'admin')");
+                t.HasCheckConstraint(
+                    "chk_users_identity_provider",
+                    "identity_provider IN ('entra', 'google', 'apple')");
             });
 
             entity.HasKey(e => e.Id);
@@ -71,6 +74,12 @@ public class HearHereDbContext : DbContext
             entity.Property(e => e.ApnsToken)
                 .HasColumnName("apns_token")
                 .HasColumnType("text");
+
+            entity.Property(e => e.IdentityProvider)
+                .HasColumnName("identity_provider")
+                .HasColumnType("varchar(20)")
+                .HasDefaultValue("entra")
+                .IsRequired();
 
             entity.Property(e => e.Role)
                 .HasColumnName("role")

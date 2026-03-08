@@ -15,8 +15,11 @@ struct ProfileView: View {
                 .padding()
             }
             .navigationTitle("Profile")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coordinator.showSettings()
@@ -27,6 +30,18 @@ struct ProfileView: View {
                     .accessibilityLabel("Settings")
                     .accessibilityHint("Opens the settings screen")
                 }
+                #else
+                ToolbarItem {
+                    Button {
+                        coordinator.showSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Settings")
+                    .accessibilityHint("Opens the settings screen")
+                }
+                #endif
             }
             .navigationDestination(for: ProfileCoordinator.Destination.self) { destination in
                 switch destination {
@@ -126,7 +141,7 @@ struct ProfileView: View {
                         viewModel.startEditingDisplayName()
                     } label: {
                         Image(systemName: "pencil.circle")
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                             .frame(minWidth: 44, minHeight: 44)
                     }
                     .accessibilityLabel("Edit display name")
@@ -205,6 +220,11 @@ struct ProfileView: View {
 private final class PreviewProfileAuthService: AuthServiceProtocol, @unchecked Sendable {
     var state: AuthState = .signedOut
     func signInWithApple(authorization: ASAuthorization) async throws -> User { fatalError() }
+    func signInWithGoogle() async throws -> User { fatalError() }
+    func signInWithEmail(email: String, password: String) async throws -> User { fatalError() }
+    func startSignUp(email: String, password: String) async throws -> SignUpCodeInfo { fatalError() }
+    func submitSignUpCode(_ code: String) async throws -> User { fatalError() }
+    func resendSignUpCode() async throws -> SignUpCodeInfo { fatalError() }
     func signInInteractively() async throws -> User { fatalError() }
     func signOut() throws {}
     func restoreSession() async {}

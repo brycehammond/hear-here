@@ -39,6 +39,7 @@ public static class UserEndpoints
         {
             Id = user.Id.ToString(),
             DisplayName = user.DisplayName,
+            IdentityProvider = user.IdentityProvider,
             RecordingCount = recordingCount,
             CreatedAt = user.CreatedAt
         });
@@ -70,6 +71,7 @@ public static class UserEndpoints
         {
             Id = user.Id.ToString(),
             DisplayName = user.DisplayName,
+            IdentityProvider = user.IdentityProvider,
             RecordingCount = recordingCount,
             CreatedAt = user.CreatedAt
         });

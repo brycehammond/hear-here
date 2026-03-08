@@ -38,7 +38,9 @@ struct RecordingView: View {
                 }
             }
             .navigationTitle("Record")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .navigationDestination(for: RecordingCoordinator.Destination.self) { destination in
                 switch destination {
                 case .editing:

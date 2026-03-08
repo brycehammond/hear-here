@@ -144,6 +144,32 @@ final class PreviewAuthService: @unchecked Sendable, AuthServiceProtocol {
         return user
     }
 
+    func signInWithGoogle() async throws -> User {
+        let user = User.preview
+        state = .signedIn(user)
+        return user
+    }
+
+    func signInWithEmail(email: String, password: String) async throws -> User {
+        let user = User.preview
+        state = .signedIn(user)
+        return user
+    }
+
+    func startSignUp(email: String, password: String) async throws -> SignUpCodeInfo {
+        SignUpCodeInfo(sentTo: email, codeLength: 6)
+    }
+
+    func submitSignUpCode(_ code: String) async throws -> User {
+        let user = User.preview
+        state = .signedIn(user)
+        return user
+    }
+
+    func resendSignUpCode() async throws -> SignUpCodeInfo {
+        SignUpCodeInfo(sentTo: "test@example.com", codeLength: 6)
+    }
+
     func signInInteractively() async throws -> User {
         let user = User.preview
         state = .signedIn(user)

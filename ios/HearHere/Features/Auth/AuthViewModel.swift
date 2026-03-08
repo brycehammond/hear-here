@@ -54,6 +54,22 @@ final class AuthViewModel {
         isLoading = false
     }
 
+    /// Signs in with Google via B2C's federated identity provider.
+    func signInWithGoogle() async {
+        isLoading = true
+        error = nil
+
+        do {
+            let user = try await authService.signInWithGoogle()
+            try await registerWithBackend(user: user)
+            appCoordinator.updateAuthGate(from: authService.state)
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
     /// Initiates interactive B2C sign-in and registers with the backend.
     ///
     /// B2C's hosted login page handles identity provider selection

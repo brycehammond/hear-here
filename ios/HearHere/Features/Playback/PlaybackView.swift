@@ -15,9 +15,11 @@ struct PlaybackView: View {
             .padding()
         }
         .navigationTitle("Playback")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button(role: .destructive) {
                         viewModel.showReportSheet = true
@@ -139,7 +141,7 @@ struct PlaybackView: View {
                         } else {
                             Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.system(size: 56))
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                     .frame(minWidth: 56, minHeight: 56)
@@ -174,7 +176,7 @@ struct PlaybackView: View {
             .accessibilityLabel("Retry playback")
         }
         .padding()
-        .background(Color(.systemOrange).opacity(0.1))
+        .background(Color.orange.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -182,62 +184,82 @@ struct PlaybackView: View {
 
     private var reportSheet: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(ReportReason.allCases) { reason in
-                        Button {
-                            viewModel.selectedReportReason = reason
-                        } label: {
-                            HStack {
-                                Text(reason.displayName)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                if viewModel.selectedReportReason == reason {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.accentColor)
-                                }
-                            }
-                            .frame(minHeight: 44)
-                        }
-                        .accessibilityLabel(reason.displayName)
-                        .accessibilityAddTraits(viewModel.selectedReportReason == reason ? .isSelected : [])
+            reportReasonList
+                .navigationTitle("Report Recording")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        reportCancelButton
                     }
-                } header: {
-                    Text("Select a reason")
+                    ToolbarItem(placement: .confirmationAction) {
+                        reportSubmitButton
+                    }
                 }
+        }
+        #if os(iOS)
+        .presentationDetents([.medium])
+        #endif
+    }
 
-                if let error = viewModel.reportError {
-                    Section {
-                        Text(error.localizedDescription)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
+    private var reportReasonList: some View {
+        List {
+            Section {
+                ForEach(ReportReason.allCases) { reason in
+                    reportReasonRow(reason)
                 }
+            } header: {
+                Text("Select a reason")
             }
-            .navigationTitle("Report Recording")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        viewModel.showReportSheet = false
-                    }
-                    .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel("Cancel report")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Submit") {
-                        Task {
-                            await viewModel.submitReport()
-                        }
-                    }
-                    .disabled(viewModel.selectedReportReason == nil || viewModel.isSubmittingReport)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel("Submit report")
-                    .accessibilityHint("Reports this recording for review")
+
+            if let error = viewModel.reportError {
+                Section {
+                    Text(error.localizedDescription)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
         }
-        .presentationDetents([.medium])
+    }
+
+    private func reportReasonRow(_ reason: ReportReason) -> some View {
+        Button {
+            viewModel.selectedReportReason = reason
+        } label: {
+            HStack {
+                Text(reason.displayName)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if viewModel.selectedReportReason == reason {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .frame(minHeight: 44)
+        }
+        .accessibilityLabel(reason.displayName)
+        .accessibilityAddTraits(viewModel.selectedReportReason == reason ? .isSelected : [])
+    }
+
+    private var reportCancelButton: some View {
+        Button("Cancel") {
+            viewModel.showReportSheet = false
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Cancel report")
+    }
+
+    private var reportSubmitButton: some View {
+        Button("Submit") {
+            Task {
+                await viewModel.submitReport()
+            }
+        }
+        .disabled(viewModel.selectedReportReason == nil || viewModel.isSubmittingReport)
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Submit report")
+        .accessibilityHint("Reports this recording for review")
     }
 
     // MARK: - Helpers

@@ -16,7 +16,9 @@ struct SettingsView: View {
             dangerZoneSection
         }
         .navigationTitle("Settings")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task {
             await viewModel.checkNotificationStatus()
         }
@@ -219,6 +221,11 @@ private final class PreviewSettingsAuthService: AuthServiceProtocol, @unchecked 
         createdAt: Date()
     ))
     func signInWithApple(authorization: ASAuthorization) async throws -> User { fatalError() }
+    func signInWithGoogle() async throws -> User { fatalError() }
+    func signInWithEmail(email: String, password: String) async throws -> User { fatalError() }
+    func startSignUp(email: String, password: String) async throws -> SignUpCodeInfo { fatalError() }
+    func submitSignUpCode(_ code: String) async throws -> User { fatalError() }
+    func resendSignUpCode() async throws -> SignUpCodeInfo { fatalError() }
     func signInInteractively() async throws -> User { fatalError() }
     func signOut() throws {}
     func restoreSession() async {}

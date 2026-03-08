@@ -10,6 +10,7 @@ public class User
     public string? Email { get; set; }
     public string? AvatarBlobKey { get; set; }
     public string? ApnsToken { get; set; }
+    public string IdentityProvider { get; set; } = "entra";
     public string Role { get; set; } = "user";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

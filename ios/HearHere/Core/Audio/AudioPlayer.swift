@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// The current state of the audio player.
-enum PlaybackState: Sendable {
+enum PlaybackState: Sendable, Equatable {
     /// The player has no audio loaded.
     case idle
 
@@ -18,6 +18,17 @@ enum PlaybackState: Sendable {
 
     /// Playback failed with an error.
     case failed(Error)
+
+    static func == (lhs: PlaybackState, rhs: PlaybackState) -> Bool {
+        switch (lhs, rhs) {
+        case (.idle, .idle), (.loading, .loading), (.playing, .playing), (.paused, .paused):
+            return true
+        case (.failed, .failed):
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 /// Protocol for audio playback, enabling mock injection for testing.

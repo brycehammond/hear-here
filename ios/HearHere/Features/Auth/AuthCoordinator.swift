@@ -11,6 +11,9 @@ final class AuthCoordinator {
     /// Destinations within the auth flow.
     enum Destination: Hashable {
         case signIn
+        case emailSignIn
+        case emailSignUp
+        case verifyCode
     }
 
     /// The navigation path for the auth flow.
@@ -19,6 +22,18 @@ final class AuthCoordinator {
     /// Navigates to the sign-in screen.
     func showSignIn() {
         path.append(Destination.signIn)
+    }
+
+    func showEmailSignIn() {
+        path.append(Destination.emailSignIn)
+    }
+
+    func showEmailSignUp() {
+        path.append(Destination.emailSignUp)
+    }
+
+    func showVerifyCode() {
+        path.append(Destination.verifyCode)
     }
 
     /// Pops back to the welcome screen.

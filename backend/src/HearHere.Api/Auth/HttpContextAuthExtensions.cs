@@ -24,6 +24,24 @@ public static class HttpContextAuthExtensions
     }
 
     /// <summary>
+    /// Extracts the identity provider from the authenticated user's claims.
+    /// Maps federated provider domains (google.com, apple.com) to short names.
+    /// Defaults to "entra" for direct Entra ID sign-ups.
+    /// </summary>
+    public static string GetIdentityProvider(this HttpContext httpContext)
+    {
+        var idp = httpContext.User.FindFirst("http://schemas.microsoft.com/identity/claims/identityprovider")?.Value
+                  ?? httpContext.User.FindFirst("idp")?.Value;
+
+        return idp switch
+        {
+            "google.com" => "google",
+            "apple.com" => "apple",
+            _ => "entra"
+        };
+    }
+
+    /// <summary>
     /// Resolves the internal database User for the current authenticated request.
     /// Throws NotFoundException if the user has not registered yet.
     /// </summary>

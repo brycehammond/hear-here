@@ -116,7 +116,7 @@ struct MiniPlayerView: View {
                         } label: {
                             Image(systemName: playbackState.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title3)
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
                         .accessibilityLabel(playbackState.isPlaying ? "Pause" : "Play")

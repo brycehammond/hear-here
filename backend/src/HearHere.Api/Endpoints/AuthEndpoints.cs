@@ -43,7 +43,8 @@ public static class AuthEndpoints
         {
             ExternalId = externalId,
             DisplayName = request.DisplayName,
-            Email = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            Email = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value,
+            IdentityProvider = httpContext.GetIdentityProvider()
         };
 
         db.Users.Add(user);
@@ -53,6 +54,7 @@ public static class AuthEndpoints
         {
             Id = user.Id.ToString(),
             DisplayName = user.DisplayName,
+            IdentityProvider = user.IdentityProvider,
             RecordingCount = 0,
             CreatedAt = user.CreatedAt
         });

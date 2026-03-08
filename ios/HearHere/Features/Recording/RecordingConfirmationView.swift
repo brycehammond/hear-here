@@ -47,7 +47,9 @@ struct RecordingConfirmationView: View {
             .padding()
         }
         .navigationTitle("Confirm")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .navigationBarBackButtonHidden(uploadState != .ready)
     }
 
